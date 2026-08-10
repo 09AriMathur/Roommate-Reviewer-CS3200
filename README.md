@@ -45,6 +45,12 @@ This project uses a simple Role-based Access Control (RBAC) system implemented i
 
 See [docs/RBAC.md](docs/RBAC.md) for a full explanation of how the RBAC system works and step-by-step instructions for adapting it to your own roles.
 
+## Changing How the App Looks
+
+The app's colors, fonts, and sidebar styling all come from `app/src/.streamlit/config.toml` — there is no CSS to edit. Save the file and the running app picks the change up; refresh the browser tab if you don't see it.
+
+See [docs/Theming.md](docs/Theming.md) for what each setting does and how to build your own palette.
+
 ## (Completely Optional) Incorporating ML Models into your Project
 
 **This is entirely optional. No part of the project requires a machine learning model, and you are not expected to build one.** The template simply happens to include the plumbing for a hypothetical model, described below, in case your team is curious and has spare time. Skipping this section costs you nothing.

@@ -1,22 +1,70 @@
 # ------------------------------------------------------------
-# In this file, you can make some modifications to the Streamlit
-# app's global environment. 
+# Streamlit configuration for this app.
 #
-# All of the possible config options can be found here:
+# Theme and client settings below are picked up as soon as you save this
+# file — no container restart needed. Refresh the browser tab if a change
+# doesn't appear. If it still doesn't, restart: docker compose restart app
+#
+# Full list of options:
 # https://docs.streamlit.io/develop/api-reference/configuration/config.toml
+#
+# See docs/Theming.md for a guide to changing the look of your app.
 # ------------------------------------------------------------
 
-
 [client]
-# Turning the default sidebar navigation off so we 
-# can use our own
+# Turn off Streamlit's built-in page navigation so that nav.py can build
+# the sidebar itself, one link at a time, based on the user's role.
 showSidebarNavigation = false
 
-[theme]
-# Setting some basic config options related to the theme of the app
-base="light"
-primaryColor="#6550e6"
-font="monospace"
+# Hide the "Deploy" button and trim the top-right menu down to the useful
+# developer entries (Rerun, Settings). Use "viewer" to hide the menu
+# entirely, or "developer" to get everything back.
+toolbarMode = "minimal"
 
 [server]
+# Re-run the app automatically when a source file is saved.
 runOnSave = true
+
+# ------------------------------------------------------------
+# Theme — the main content area.
+# Colors are hex strings. Fonts are "sans-serif", "serif", or "monospace".
+# ------------------------------------------------------------
+[theme]
+base = "light"
+
+# Accent color: buttons, sliders, focus rings, selected states.
+primaryColor = "#2C6E63"
+
+# Page background and the shade used for cards, code blocks, and tables.
+backgroundColor = "#FBFAF7"
+secondaryBackgroundColor = "#F1EFE9"
+
+# Body text and links.
+textColor = "#1F2421"
+linkColor = "#2C6E63"
+
+# Serif headings against sans-serif body text keeps headings distinct
+# without needing custom CSS. Code stays monospace, where it belongs.
+font = "sans-serif"
+headingFont = "serif"
+codeFont = "monospace"
+
+# Slightly squared corners read as more deliberate than the rounded default.
+baseRadius = "small"
+buttonRadius = "small"
+
+# Give inputs a visible outline so form fields read as fields.
+borderColor = "#E0DCD2"
+showWidgetBorder = true
+
+# ------------------------------------------------------------
+# Theme — the sidebar, which inherits from [theme] unless overridden.
+# A dark sidebar against the light content area is what stops this looking
+# like a stock Streamlit app.
+# ------------------------------------------------------------
+[theme.sidebar]
+backgroundColor = "#232B2B"
+secondaryBackgroundColor = "#33403D"
+textColor = "#E9EDEB"
+primaryColor = "#4E9C8D"
+borderColor = "#33403D"

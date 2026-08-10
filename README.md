@@ -1,6 +1,6 @@
-# Spring 2026 CS 3200 Project Template
+# Summer B 2026 CS 3200 Project Template
 
-This is a template repo for Dr. Fontenot's Spring 2026 CS 3200 Course Project.
+This is a template repo for Dr. Fontenot's Summer B 2026 CS 3200 Course Project.
 
 It includes most of the infrastructure setup (containers), sample databases, and example UI pages. Explore it fully and ask questions!
 

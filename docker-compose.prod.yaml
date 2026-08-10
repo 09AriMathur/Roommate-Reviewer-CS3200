@@ -1,0 +1,57 @@
+name: project-app-team-repo
+
+# Production compose file used by Coolify to deploy each team's stack.
+# Differences from docker-compose.yaml (dev):
+#   - No source-code volume mounts: code is baked into images at build time.
+#   - No WATCHPACK_POLLING (dev-only hot-reload signal).
+#   - No host port bindings on app/api/db: Coolify's Traefik reverse-proxies
+#     the configured subdomains directly to the service container ports.
+#   - No container_name (dev's fixed names would collide between teams; Coolify
+#     names containers per-stack).
+#   - hostname: web-api is preserved so existing app/src code calling
+#     http://web-api:4000 works unchanged in production.
+#   - Env vars (SECRET_KEY, MYSQL_ROOT_PASSWORD, etc.) are injected by Coolify
+#     via its Environment Variables UI; no .env file is needed in production.
+#   - The db service is built from ./database-files/Dockerfile so the seed SQL
+#     ships inside the image. No bind mount (Coolify doesn't reliably honor
+#     relative bind mounts) and no persistent volume (every redeploy starts
+#     with a freshly seeded database from the SQL committed in the repo).
+
+services:
+  app:
+    build: ./app
+    hostname: web-app
+    expose:
+      - "8501"
+    depends_on:
+      - api
+
+  api:
+    build: ./api
+    hostname: web-api
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - DB_USER=${DB_USER}
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+    expose:
+      - "4000"
+    depends_on:
+      - db
+
+  db:
+    build: ./database-files
+    hostname: db
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${DB_NAME}
+    # tmpfs (RAM-backed) explicitly overrides the mysql:9 image's VOLUME
+    # directive for /var/lib/mysql. Without this, Docker silently creates an
+    # anonymous volume that survives container recreates, and MySQL's
+    # entrypoint skips init on subsequent deploys — defeating the ephemeral
+    # behavior we want. With tmpfs, every container recreate gets a truly
+    # fresh data dir and the SQL in the image always seeds the database.
+    tmpfs:
+      - /var/lib/mysql

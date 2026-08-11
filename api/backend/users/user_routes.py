@@ -36,6 +36,23 @@ def get_user(user_id):
         if not user:
             return jsonify({"error": "User not found"}), 404
 
+        return jsonify(user), 200
+    except Error as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+# Get a specific user and related tasks based on user ID
+@users.route("/users/<int:user_id>/tasks", methods=["GET"])
+def get_user_tasks(user_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM Users WHERE UserID = %s", (user_id,))
+        user = cursor.fetchone()
+
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
         # Reuse the same cursor for the follow-up queries
         cursor.execute("SELECT * FROM Tasks WHERE Created_UserID = %s", (user_id,))
         user["created_tasks"] = cursor.fetchall()
@@ -124,7 +141,7 @@ def update_user(user_id):
 
 
 # Get assigned tasks related to a specific user
-@users.route("/users/<int:user_id>/assigned_tasks", methods=["GET"])
+@users.route("/users/<int:user_id>/tasks/assigned", methods=["GET"])
 def get_assigned_tasks(user_id):
     cursor = get_db().cursor(dictionary=True)
     try:
@@ -149,7 +166,7 @@ def get_assigned_tasks(user_id):
 
 
 # Get created tasks related to a specific user
-@users.route("/users/<int:user_id>/created_tasks", methods=["GET"])
+@users.route("/users/<int:user_id>/tasks/created", methods=["GET"])
 def get_created_tasks(user_id):
     cursor = get_db().cursor(dictionary=True)
     try:
@@ -174,6 +191,90 @@ def get_created_tasks(user_id):
 
     finally:
         cursor.close()
+
+# Get completed tasks related to a specific user
+@users.route("/users/<int:user_id>/tasks/completed", methods=["GET"])
+def get_completed_tasks(user_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT UserID FROM Users WHERE UserID = %s", (user_id,))
+        user = cursor.fetchone()
+
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        # Reuse the same cursor for the follow-up queries
+        cursor.execute("SELECT * FROM Tasks WHERE Assigned_UserID = %s AND status = 'done'", (user_id,))
+        user["completed_tasks"] = cursor.fetchall()
+
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        return jsonify(user), 200
+
+    except Error as e:
+        current_app.logger.error(f'Database error in get_completed_tasks: {e}')
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        cursor.close()
+
+# Get missed tasks related to a specific user
+@users.route("/users/<int:user_id>/tasks/missed", methods=["GET"])
+def get_missed_tasks(user_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT UserID FROM Users WHERE UserID = %s", (user_id,))
+        user = cursor.fetchone()
+
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        # Reuse the same cursor for the follow-up queries
+        cursor.execute("SELECT * FROM Tasks WHERE Assigned_UserID = %s AND status = 'missed'", (user_id,))
+        user["missed_tasks"] = cursor.fetchall()
+
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        return jsonify(user), 200
+
+    except Error as e:
+        current_app.logger.error(f'Database error in get_missed_tasks: {e}')
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        cursor.close()
+
+
+# Get todo tasks related to a specific user
+@users.route("/users/<int:user_id>/tasks/todo", methods=["GET"])
+def get_todo_tasks(user_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT UserID FROM Users WHERE UserID = %s", (user_id,))
+        user = cursor.fetchone()
+
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        # Reuse the same cursor for the follow-up queries
+        cursor.execute("SELECT * FROM Tasks WHERE Assigned_UserID = %s AND status IN ('todo', 'in_progress')", (user_id,))
+        user["todo_tasks"] = cursor.fetchall()
+
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        return jsonify(user), 200
+
+    except Error as e:
+        current_app.logger.error(f'Database error in get_todo_tasks: {e}')
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        cursor.close()
+
+
 
 # Get roommates associated with a user
 @users.route("/users/<int:user_id>/roommates", methods=["GET"])

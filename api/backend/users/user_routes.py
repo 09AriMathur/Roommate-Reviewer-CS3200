@@ -11,25 +11,8 @@ def get_all_users():
     try:
         current_app.logger.info('GET /user/users')
 
-        # Query parameters are added after the main part of the URL.
-        # Example: http://localhost:4000/user/users?founding_year=1971
-        # country = request.args.get("country")
-        # focus_area = request.args.get("focus_area")
-        # founding_year = request.args.get("founding_year")
-
-        # WHERE 1=1 lets us append AND clauses cleanly without special-casing the first filter
         query = "SELECT * FROM Users"
         params = []
-
-        # if country:
-        #     query += " AND Country = %s"
-        #     params.append(country)
-        # if focus_area:
-        #     query += " AND Focus_Area = %s"
-        #     params.append(focus_area)
-        # if founding_year:
-        #     query += " AND Founding_Year = %s"
-        #     params.append(founding_year)
 
         cursor.execute(query, params)
         user_list = cursor.fetchall()
@@ -74,7 +57,6 @@ def create_new_user():
         data = request.get_json()
         
         required_fields = [
-            "UserID",
             "First_Name",
             "Last_Name",
             "Email",
@@ -86,11 +68,10 @@ def create_new_user():
                 return jsonify({"error": f"Missing required field: {field}"}), 400
             
         query = """
-                    INSERT INTO Users (UserId, First_Name, Last_Name, Email, RA, RoomID)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO Users (First_Name, Last_Name, Email, RA, RoomID)
+                    VALUES (%s, %s, %s, %s, %s)
                 """
         cursor.execute(query, (
-            data["UserID"],
             data["First_Name"],
             data["Last_Name"],
             data["Email"],
@@ -143,7 +124,7 @@ def update_user(user_id):
 
 
 # Get assigned tasks related to a specific user
-@users.route("/users/assigned_tasks/<int:user_id>", methods=["GET"])
+@users.route("/users/<int:user_id>/assigned_tasks", methods=["GET"])
 def get_assigned_tasks(user_id):
     cursor = get_db().cursor(dictionary=True)
     try:
@@ -168,7 +149,7 @@ def get_assigned_tasks(user_id):
 
 
 # Get created tasks related to a specific user
-@users.route("/users/created_tasks/<int:user_id>", methods=["GET"])
+@users.route("/users/<int:user_id>/created_tasks", methods=["GET"])
 def get_created_tasks(user_id):
     cursor = get_db().cursor(dictionary=True)
     try:
@@ -189,6 +170,32 @@ def get_created_tasks(user_id):
 
     except Error as e:
         current_app.logger.error(f'Database error in get_created_tasks: {e}')
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        cursor.close()
+
+# Get roommates associated with a user
+@users.route("/users/<int:user_id>/roommates", methods=["GET"])
+def get_roommates(user_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT UserID, RoomID FROM Users WHERE UserID = %s", (user_id,))
+        user = cursor.fetchone()
+
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        cursor.execute("SELECT * FROM Users WHERE RoomID = (SELECT RoomID FROM Users WHERE UserID = %s) AND UserID != %s", (user_id, user_id))
+        user["roommates"] = cursor.fetchall()
+
+        if not user:
+                    return jsonify({"error": "Room or user not found"}), 404
+
+        return jsonify(user), 200
+
+    except Error as e:
+        current_app.logger.error(f'Database error in get_roommates: {e}')
         return jsonify({"error": str(e)}), 500
 
     finally:

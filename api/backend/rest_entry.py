@@ -8,6 +8,9 @@ from backend.simple.simple_routes import simple_routes
 from backend.users.user_routes import users
 from backend.tasks.task_routes import tasks
 from backend.room_reports.room_report_routes import room_reports
+from backend.requests.request_routes import requests
+from backend.user_away.user_away_routes import user_away
+from backend.dorms.dorm_routes import dorms
 
 
 def create_app():
@@ -41,5 +44,8 @@ def create_app():
     app.register_blueprint(users, url_prefix="/user")
     app.register_blueprint(tasks, url_prefix="/task")
     app.register_blueprint(room_reports, url_prefix="/room_report")
+    app.register_blueprint(requests, url_prefix="/request")
+    app.register_blueprint(user_away, url_prefix="/away")
+    app.register_blueprint(dorms, url_prefix="/dorm")
 
     return app

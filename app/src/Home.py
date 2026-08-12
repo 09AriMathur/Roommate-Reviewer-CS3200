@@ -79,3 +79,14 @@ if st.button('user home',
         st.session_state['role'] = 'user'
         st.session_state['first_name'] = 'Test User'
         st.switch_page('pages/01_User_Home.py')
+if st.button('Act as Carol, a Residence Advisor',
+            type='primary',
+            use_container_width=True):
+    st.session_state['authenticated'] = True
+    st.session_state['role'] = 'ra'
+    st.session_state['first_name'] = 'Carol'
+    # Risha stands in for Carol Diaz (RAs.UserID 1) in the seed data, so pages that
+    # scope data to "the current RA" (e.g. Rules Manager) have a real record to use
+    st.session_state['user_id'] = 1
+    logger.info("Logging in as Residence Advisor Persona")
+    st.switch_page('pages/00_RA_Home.py')

@@ -1,0 +1,206 @@
+from flask import Blueprint, jsonify, request, current_app
+from backend.db_connection import get_db
+from mysql.connector import Error
+
+# Create a Blueprint for RA routes
+ras = Blueprint("ras", __name__)
+
+
+# Get all RAs
+# Example: /ras
+@ras.route("/ras", methods=["GET"])
+def get_all_ras():
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        current_app.logger.info('GET /ras')
+
+        cursor.execute("SELECT * FROM RAs")
+        ra_list = cursor.fetchall()
+
+        current_app.logger.info(f'Retrieved {len(ra_list)} RAs')
+        return jsonify(ra_list), 200
+    except Error as e:
+        current_app.logger.error(f'Database error in get_all_ras: {e}')
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
+# Get detailed information about a specific RA
+# Example: /ras/1
+@ras.route("/ras/<int:ra_id>", methods=["GET"])
+def get_ra(ra_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM RAs WHERE UserID = %s", (ra_id,))
+        ra = cursor.fetchone()
+
+        if not ra:
+            return jsonify({"error": "RA not found"}), 404
+
+        return jsonify(ra), 200
+    except Error as e:
+        current_app.logger.error(f'Database error in get_ra: {e}')
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
+# Create a new RA
+# Required fields: First_Name, Last_Name, Email
+# Optional: RA_ID, Settled_Reqs, Settled_Reps, Year
+# Example: POST /ras with JSON body
+@ras.route("/ras", methods=["POST"])
+def create_ra():
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        data = request.get_json()
+
+        required_fields = ["First_Name", "Last_Name", "Email"]
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"Missing required field: {field}"}), 400
+
+        query = """
+            INSERT INTO RAs (First_Name, Last_Name, Email, RA_ID, Settled_Reqs, Settled_Reps, Year)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """
+        cursor.execute(query, (
+            data["First_Name"],
+            data["Last_Name"],
+            data["Email"],
+            data.get("RA_ID"),
+            data.get("Settled_Reqs", 0),
+            data.get("Settled_Reps", 0),
+            data.get("Year"),
+        ))
+
+        get_db().commit()
+        return jsonify({"message": "RA created successfully", "user_id": cursor.lastrowid}), 201
+    except Error as e:
+        if e.errno == 1062:  # duplicate entry on unique Email
+            return jsonify({"error": "An RA with that email already exists"}), 409
+        current_app.logger.error(f'Database error in create_ra: {e}')
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
+# Update an existing RA's information
+# Can update First_Name, Last_Name, Email, RA_ID, Settled_Reqs, Settled_Reps, Year
+# Example: PUT /ras/1 with JSON body containing fields to update
+@ras.route("/ras/<int:ra_id>", methods=["PUT"])
+def update_ra(ra_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        data = request.get_json()
+
+        cursor.execute("SELECT UserID FROM RAs WHERE UserID = %s", (ra_id,))
+        if not cursor.fetchone():
+            return jsonify({"error": "RA not found"}), 404
+
+        allowed_fields = ["First_Name", "Last_Name", "Email", "RA_ID", "Settled_Reqs", "Settled_Reps", "Year"]
+        update_fields = [f"{f} = %s" for f in allowed_fields if f in data]
+        params = [data[f] for f in allowed_fields if f in data]
+
+        if not update_fields:
+            return jsonify({"error": "No valid fields to update"}), 400
+
+        params.append(ra_id)
+        query = f"UPDATE RAs SET {', '.join(update_fields)} WHERE UserID = %s"
+        cursor.execute(query, params)
+        get_db().commit()
+
+        return jsonify({"message": "RA updated successfully"}), 200
+    except Error as e:
+        if e.errno == 1062:
+            return jsonify({"error": "An RA with that email already exists"}), 409
+        current_app.logger.error(f'Database error in update_ra: {e}')
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
+# Get all rooms under a specific RA.
+# Rooms don't FK directly to RAs, so this is derived via the users
+# assigned to each room: any room housing a user whose Users.RA points
+# to this RA counts as "under" that RA.
+# Example: /ras/1/rooms
+@ras.route("/ras/<int:ra_id>/rooms", methods=["GET"])
+def get_ra_rooms(ra_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT UserID FROM RAs WHERE UserID = %s", (ra_id,))
+        if not cursor.fetchone():
+            return jsonify({"error": "RA not found"}), 404
+
+        query = """
+            SELECT DISTINCT r.*
+            FROM Rooms r
+            JOIN Users u ON u.RoomID = r.RoomID
+            WHERE u.RA = %s
+        """
+        cursor.execute(query, (ra_id,))
+        return jsonify(cursor.fetchall()), 200
+    except Error as e:
+        current_app.logger.error(f'Database error in get_ra_rooms: {e}')
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
+# Get all users under a specific RA
+# Example: /ras/1/users
+@ras.route("/ras/<int:ra_id>/users", methods=["GET"])
+def get_ra_users(ra_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT UserID FROM RAs WHERE UserID = %s", (ra_id,))
+        if not cursor.fetchone():
+            return jsonify({"error": "RA not found"}), 404
+
+        cursor.execute("SELECT * FROM Users WHERE RA = %s", (ra_id,))
+        return jsonify(cursor.fetchall()), 200
+    except Error as e:
+        current_app.logger.error(f'Database error in get_ra_users: {e}')
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
+# Get all rules created by a specific RA
+# Example: /ras/1/rules
+@ras.route("/ras/<int:ra_id>/rules", methods=["GET"])
+def get_ra_rules(ra_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT UserID FROM RAs WHERE UserID = %s", (ra_id,))
+        if not cursor.fetchone():
+            return jsonify({"error": "RA not found"}), 404
+
+        cursor.execute("SELECT * FROM Rules WHERE RA_ID = %s", (ra_id,))
+        return jsonify(cursor.fetchall()), 200
+    except Error as e:
+        current_app.logger.error(f'Database error in get_ra_rules: {e}')
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
+# Get all interventions being managed by a specific RA
+# Example: /ras/1/interventions
+@ras.route("/ras/<int:ra_id>/interventions", methods=["GET"])
+def get_ra_interventions(ra_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT UserID FROM RAs WHERE UserID = %s", (ra_id,))
+        if not cursor.fetchone():
+            return jsonify({"error": "RA not found"}), 404
+
+        cursor.execute("SELECT * FROM RA_Intervention WHERE RA = %s", (ra_id,))
+        return jsonify(cursor.fetchall()), 200
+    except Error as e:
+        current_app.logger.error(f'Database error in get_ra_interventions: {e}')
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()

@@ -7,6 +7,7 @@ from backend.db_connection import init_app as init_db
 from backend.simple.simple_routes import simple_routes
 from backend.users.user_routes import users
 from backend.tasks.task_routes import tasks
+from backend.room_reports.room_report_routes import room_reports
 
 
 def create_app():
@@ -39,5 +40,6 @@ def create_app():
     app.register_blueprint(simple_routes)
     app.register_blueprint(users, url_prefix="/user")
     app.register_blueprint(tasks, url_prefix="/task")
+    app.register_blueprint(room_reports, url_prefix="/room_report")
 
     return app

@@ -160,7 +160,7 @@ todo_tab, missed_tab, done_tab, created_tab = st.tabs([
     f"To do ({len(todo)})",
     f"Missed ({len(missed)})",
     f"Completed ({len(completed)})",
-    f"I created ({len(created)})",
+    f"Created ({len(created)})",
 ])
 
 with todo_tab:

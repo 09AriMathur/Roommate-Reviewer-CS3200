@@ -48,22 +48,30 @@ with st.container(border=True):
 
 st.write('### What would you like to do today?')
 
-if st.button('View My Home (Tasks & Roommates)',
-             type='primary',
-             use_container_width=True):
-    st.switch_page('pages/01_User_Home.py')
+# Bordered columns give the four cards a matching height without having to
+# pin one, since none of them sit next to an empty spacer column.
+cards = st.columns(4, gap='medium', border=True)
 
-if st.button('File a Room Report',
-             type='primary',
-             use_container_width=True):
-    st.switch_page('pages/02_User_Room_Reports.py')
+with cards[0]:
+    st.markdown('**This Week**')
+    st.caption('Your chores day by day, and who else is in your room.')
+    if st.button('Open', type='primary', use_container_width=True, key='go_week'):
+        st.switch_page('pages/01_User_Home.py')
 
-if st.button('Request an RA Intervention',
-             type='primary',
-             use_container_width=True):
-    st.switch_page('pages/03_User_RA_Interventions.py')
+with cards[1]:
+    st.markdown('**Chore Reports**')
+    st.caption('Flag a chore a roommate skipped, and see the ones already filed.')
+    if st.button('Open', type='primary', use_container_width=True, key='go_reports'):
+        st.switch_page('pages/02_User_Room_Reports.py')
 
-if st.button('View Past Tasks',
-             type='primary',
-             use_container_width=True):
-    st.switch_page('pages/04_Past_Tasks.py')
+with cards[2]:
+    st.markdown('**Ask My RA**')
+    st.caption('Request an intervention when the room cannot sort it out alone.')
+    if st.button('Open', type='primary', use_container_width=True, key='go_ra'):
+        st.switch_page('pages/03_User_RA_Interventions.py')
+
+with cards[3]:
+    st.markdown('**Task History**')
+    st.caption('Every task your room has created, with filters and search.')
+    if st.button('Open', type='primary', use_container_width=True, key='go_history'):
+        st.switch_page('pages/04_Past_Tasks.py')

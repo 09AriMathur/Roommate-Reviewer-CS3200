@@ -5,7 +5,8 @@ import logging
 
 from backend.db_connection import init_app as init_db
 from backend.simple.simple_routes import simple_routes
-from backend.ngos.ngo_routes import ngos
+from backend.rooms.room_routes import rooms
+from backend.RA.ra_routes import ras
 
 
 def create_app():
@@ -36,6 +37,7 @@ def create_app():
     # and give a url prefix to each.
     app.logger.info("create_app(): registering blueprints")
     app.register_blueprint(simple_routes)
-    app.register_blueprint(ngos, url_prefix="/ngo")
+    app.register_blueprint(rooms, url_prefix="/room")
+    app.register_blueprint(ras, url_prefix="/ra")
 
     return app

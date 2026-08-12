@@ -57,7 +57,7 @@ def get_room(room_id):
 
 # Create a new room
 # Required fields: DormID, Room_Number
-# Optional: RA (denormalized name field on Rooms)
+# Optional: RA (foreign key referencing RAs.RA_ID)
 # Example: POST /rooms with JSON body
 @rooms.route("/rooms", methods=["POST"])
 def create_room():
@@ -177,34 +177,27 @@ def get_room_users(room_id):
 
 
 # Get the RA assigned to a specific room.
-# Derived via Users.RA -> RAs, since Rooms.RA is just a denormalized name
-# string and not an actual foreign key. Also returns the raw Rooms.RA text
-# for comparison in case the two have drifted out of sync.
+# Rooms.RA is a foreign key to RAs.RA_ID, so this just looks up that RA
+# directly rather than deriving it through Users.
 # Example: /rooms/1/ra
 @rooms.route("/rooms/<int:room_id>/ra", methods=["GET"])
 def get_room_ra(room_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        cursor.execute("SELECT RoomID, RA AS Room_RA_Label FROM Rooms WHERE RoomID = %s", (room_id,))
+        cursor.execute("SELECT RoomID, RA FROM Rooms WHERE RoomID = %s", (room_id,))
         room = cursor.fetchone()
 
         if not room:
             return jsonify({"error": "Room not found"}), 404
 
-        query = """
-            SELECT DISTINCT r.UserID, r.First_Name, r.Last_Name, r.Email,
-                   r.RA_ID, r.Settled_Reqs, r.Settled_Reps, r.Year
-            FROM RAs r
-            JOIN Users u ON u.RA = r.UserID
-            WHERE u.RoomID = %s
-        """
-        cursor.execute(query, (room_id,))
-        ra_list = cursor.fetchall()
+        ra = None
+        if room["RA"] is not None:
+            cursor.execute("SELECT * FROM RAs WHERE RA_ID = %s", (room["RA"],))
+            ra = cursor.fetchone()
 
         return jsonify({
             "room_id": room_id,
-            "room_ra_label": room["Room_RA_Label"],
-            "ra": ra_list
+            "ra": ra
         }), 200
     except Error as e:
         current_app.logger.error(f'Database error in get_room_ra: {e}')

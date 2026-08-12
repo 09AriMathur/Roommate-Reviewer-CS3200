@@ -48,7 +48,12 @@ suite_avg = standing.get('suite_avg_pct')
 room_id = standing.get('RoomID')
 today = date.today()
 
-main, side = st.columns([3, 2])
+# The side panel holds a fixed width and stays against the right edge. The main column
+# stretches into whatever is left, so widening the window feeds the strike track and the
+# roommate chart rather than padding out the summary lists.
+layout = st.container(horizontal=True, gap="medium")
+main = layout.container(width="stretch")
+side = layout.container(width=260)
 
 with main:
     # ---- The strike track from the wireframe: three steps, filled as they land ----
@@ -58,14 +63,14 @@ with main:
     for i in range(STRIKE_LIMIT):
         filled = i < open_strikes
         is_last = i == STRIKE_LIMIT - 1
+        # Marker on its own line, label beneath it. Keeping them on one line made the
+        # card depend on "RA notified" fitting the column, which it did not.
+        marker = ":red[●]" if filled else ":gray[○]"
+        label = "RA notified" if is_last and not filled else f"Strike {i + 1}"
         with track[i]:
             with st.container(border=True):
-                if filled:
-                    st.markdown(f"### :red[●] Strike {i + 1}")
-                elif is_last:
-                    st.markdown("### :gray[○] RA notified")
-                else:
-                    st.markdown(f"### :gray[○] Strike {i + 1}")
+                st.markdown(f"### {marker}")
+                st.markdown(f"**{label}**")
 
     remaining = STRIKE_LIMIT - open_strikes
     if remaining <= 0:
@@ -241,7 +246,9 @@ with side:
                     else f"Due {due.strftime('%b %d')}"
                 )
 
-    st.write("### Waiting on a decision")
+    # Shorter than the landing page's "Waiting on a decision" -- that heading wraps in
+    # this narrower rail.
+    st.write("### Pending requests")
     pending = api_get(f"/request/users/{USER_ID}/requests",
                       params={"status": "open"}, quiet=True) or []
     if not pending:

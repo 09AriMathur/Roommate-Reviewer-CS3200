@@ -107,6 +107,7 @@ CREATE TABLE Room_Reports (
     TaskID    	INT,
     UserID    	INT NOT NULL,
     RequestID 	INT,
+    Description TEXT,
     FOREIGN KEY (TaskID)	REFERENCES Tasks(Task_ID)    	ON DELETE SET NULL ON UPDATE CASCADE,
     FOREIGN KEY (UserID)	REFERENCES Users(UserID)     	ON DELETE CASCADE  ON UPDATE CASCADE,
     FOREIGN KEY (RequestID) REFERENCES Requests(Request_ID)  ON DELETE SET NULL ON UPDATE CASCADE
@@ -218,17 +219,17 @@ INSERT INTO RA_Intervention (RequestID, Description, Status, UserID, RA) VALUES
 (2, 'Mediated a noise complaint between roommates in 201.',     'closed',  3, 2),
 (3, 'Follow up on unresolved room change request.',             'pending', 5, 3);
 
-INSERT INTO Room_Reports (ReportID, Time_Reported, Status, TaskID, UserID, RequestID) VALUES
-(1, '2026-08-01 10:05:00', 'closed',   1, 1,    1),
-(2, '2026-08-02 15:00:00', 'open',     2, 2,    2),
-(3, '2026-08-04 18:00:00', 'reviewed', 4, 5, NULL),
+INSERT INTO Room_Reports (ReportID, Time_Reported, Status, TaskID, UserID, RequestID, Description) VALUES
+(1, '2026-08-01 10:05:00', 'closed',   1, 1,    1, 'Bathroom hasnt been cleaned yet'),
+(2, '2026-08-02 15:00:00', 'open',     2, 2,    2, 'Hallway is still super dark'),
+(3, '2026-08-04 18:00:00', 'reviewed', 4, 5, NULL, 'Common room floor is super dirty'),
 -- Reports against Frank Osei (UserID 4). Note UserID here is the roommate who FILED
 -- the report; the person blamed is reached through TaskID -> Tasks.Assigned_UserID.
 -- Reports 4 and 5 are open, so Frank has two live strikes; report 5 is the old June one
 -- that expunction request 8 is asking to void, linked through RequestID.
-(4, '2026-07-21 09:15:00', 'open',     5, 3,    NULL),
-(5, '2026-06-16 20:30:00', 'open',     6, 1,    8),
-(6, '2026-07-05 08:40:00', 'closed',   7, 3,    NULL);
+(4, '2026-07-21 09:15:00', 'open',     5, 3,    NULL, 'Trash not taken out yet'),
+(5, '2026-06-16 20:30:00', 'open',     6, 1,    8, 'Counters are dirty still'),
+(6, '2026-07-05 08:40:00', 'closed',   7, 3,    NULL, 'Microwave is still dirty');
 
 INSERT INTO UserAway (AwayID, UserID, Start_Date, End_Date) VALUES
 (1, 1, '2026-07-01', '2026-07-10'),

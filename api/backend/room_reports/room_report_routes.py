@@ -40,18 +40,20 @@ def create_new_room_report():
         required_fields = [
             "TaskID",
             "UserID",
+            "Description"
         ]
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"Missing required field: {field}"}), 400
             
         query = """
-                    INSERT INTO Room_Reports (TaskID, UserID)
-                    VALUES (%s, %s)
+                    INSERT INTO Room_Reports (TaskID, UserID, Description)
+                    VALUES (%s, %s, %s)
                 """
         cursor.execute(query, (
             data["TaskID"],
             data["UserID"],
+            data["Description"]
         ))
 
         get_db().commit()

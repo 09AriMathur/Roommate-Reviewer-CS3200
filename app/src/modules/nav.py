@@ -57,6 +57,28 @@ def past_tasks_nav():
     st.sidebar.page_link("pages/04_Past_Tasks.py", label="Past Tasks", icon="🗒️")
 
 
+# ---- Role: student -----------------------------------------------------------
+
+def student_home_nav():
+    st.sidebar.page_link("pages/10_Student_Home.py", label="My Dorm", icon="👤")
+
+
+def my_chores_nav():
+    st.sidebar.page_link("pages/11_My_Chores.py", label="My Chores", icon="🧹")
+
+
+def my_requests_nav():
+    st.sidebar.page_link("pages/12_My_Requests.py", label="My Requests", icon="✉️")
+
+
+def my_away_nav():
+    st.sidebar.page_link("pages/13_My_Away.py", label="Away Dates", icon="✈️")
+
+
+def my_standing_nav():
+    st.sidebar.page_link("pages/14_My_Standing.py", label="My Standing", icon="📈")
+
+
 # ---- Role: usaid_worker -----------------------------------------------------
 
 def usaid_worker_home_nav():
@@ -156,6 +178,13 @@ def SideBarLinks(show_home=False):
             user_room_reports_nav()
             user_ra_interventions_nav()
             past_tasks_nav()
+
+        if st.session_state["role"] == "student":
+            student_home_nav()
+            my_chores_nav()
+            my_requests_nav()
+            my_away_nav()
+            my_standing_nav()
 
         if st.session_state["role"] == "pol_strat_advisor":
             pol_strat_home_nav()

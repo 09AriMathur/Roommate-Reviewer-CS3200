@@ -47,6 +47,17 @@ if st.button('User Page',
         st.session_state['role'] = 'user'
         st.session_state['user_id'] = 43
         st.switch_page('pages/00_User_Start.py')
+if st.button('Act as Frank, a Resident Falling Behind',
+        type='primary',
+        use_container_width=True):
+        st.session_state['authenticated'] = True
+        st.session_state['role'] = 'student'
+        # Frank Osei (Users.UserID 4) is the seeded stand-in for the Ronny RuleBreaker
+        # persona: 0 tasks completed, 3 missed, two open strikes, and four open requests.
+        st.session_state['user_id'] = 4
+        st.session_state['first_name'] = 'Frank'
+        logger.info("Logging in as the Ronny RuleBreaker Persona")
+        st.switch_page('pages/10_Student_Home.py')
 if st.button('Act as Carol, a Residence Advisor',
             type='primary',
             use_container_width=True):

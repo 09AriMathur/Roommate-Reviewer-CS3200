@@ -1,11 +1,4 @@
 altair
 pandas
-streamlit
-streamlit-extras
-world-bank-data
-matplotlib
-numpy
-pydeck
 requests
-plotly
-scikit-learn
+streamlit

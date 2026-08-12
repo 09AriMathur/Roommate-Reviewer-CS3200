@@ -78,4 +78,4 @@ if st.button('user home',
         st.session_state['authenticated'] = True
         st.session_state['role'] = 'user'
         st.session_state['first_name'] = 'Test User'
-        st.switch_page('pages/01_User_Home.py')
+        st.switch_page('pages/00_User_Start.py')

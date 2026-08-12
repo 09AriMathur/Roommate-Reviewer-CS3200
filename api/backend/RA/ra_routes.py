@@ -32,7 +32,7 @@ def get_all_ras():
 def get_ra(ra_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        cursor.execute("SELECT * FROM RAs WHERE UserID = %s", (ra_id,))
+        cursor.execute("SELECT * FROM RAs WHERE RA_ID = %s", (ra_id,))
         ra = cursor.fetchone()
 
         if not ra:
@@ -48,7 +48,7 @@ def get_ra(ra_id):
 
 # Create a new RA
 # Required fields: First_Name, Last_Name, Email
-# Optional: RA_ID, Settled_Reqs, Settled_Reps, Year
+# Optional: Settled_Reqs, Settled_Reps
 # Example: POST /ras with JSON body
 @ras.route("/ras", methods=["POST"])
 def create_ra():
@@ -62,21 +62,19 @@ def create_ra():
                 return jsonify({"error": f"Missing required field: {field}"}), 400
 
         query = """
-            INSERT INTO RAs (First_Name, Last_Name, Email, RA_ID, Settled_Reqs, Settled_Reps, Year)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO RAs (First_Name, Last_Name, Email, Settled_Reqs, Settled_Reps)
+            VALUES (%s, %s, %s, %s, %s)
         """
         cursor.execute(query, (
             data["First_Name"],
             data["Last_Name"],
             data["Email"],
-            data.get("RA_ID"),
             data.get("Settled_Reqs", 0),
             data.get("Settled_Reps", 0),
-            data.get("Year"),
         ))
 
         get_db().commit()
-        return jsonify({"message": "RA created successfully", "user_id": cursor.lastrowid}), 201
+        return jsonify({"message": "RA created successfully", "ra_id": cursor.lastrowid}), 201
     except Error as e:
         if e.errno == 1062:  # duplicate entry on unique Email
             return jsonify({"error": "An RA with that email already exists"}), 409
@@ -87,7 +85,7 @@ def create_ra():
 
 
 # Update an existing RA's information
-# Can update First_Name, Last_Name, Email, RA_ID, Settled_Reqs, Settled_Reps, Year
+# Can update First_Name, Last_Name, Email, Settled_Reqs, Settled_Reps
 # Example: PUT /ras/1 with JSON body containing fields to update
 @ras.route("/ras/<int:ra_id>", methods=["PUT"])
 def update_ra(ra_id):
@@ -95,11 +93,11 @@ def update_ra(ra_id):
     try:
         data = request.get_json()
 
-        cursor.execute("SELECT UserID FROM RAs WHERE UserID = %s", (ra_id,))
+        cursor.execute("SELECT RA_ID FROM RAs WHERE RA_ID = %s", (ra_id,))
         if not cursor.fetchone():
             return jsonify({"error": "RA not found"}), 404
 
-        allowed_fields = ["First_Name", "Last_Name", "Email", "RA_ID", "Settled_Reqs", "Settled_Reps", "Year"]
+        allowed_fields = ["First_Name", "Last_Name", "Email", "Settled_Reqs", "Settled_Reps"]
         update_fields = [f"{f} = %s" for f in allowed_fields if f in data]
         params = [data[f] for f in allowed_fields if f in data]
 
@@ -107,7 +105,7 @@ def update_ra(ra_id):
             return jsonify({"error": "No valid fields to update"}), 400
 
         params.append(ra_id)
-        query = f"UPDATE RAs SET {', '.join(update_fields)} WHERE UserID = %s"
+        query = f"UPDATE RAs SET {', '.join(update_fields)} WHERE RA_ID = %s"
         cursor.execute(query, params)
         get_db().commit()
 
@@ -130,7 +128,7 @@ def update_ra(ra_id):
 def get_ra_rooms(ra_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        cursor.execute("SELECT UserID FROM RAs WHERE UserID = %s", (ra_id,))
+        cursor.execute("SELECT RA_ID FROM RAs WHERE RA_ID = %s", (ra_id,))
         if not cursor.fetchone():
             return jsonify({"error": "RA not found"}), 404
 
@@ -155,7 +153,7 @@ def get_ra_rooms(ra_id):
 def get_ra_users(ra_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        cursor.execute("SELECT UserID FROM RAs WHERE UserID = %s", (ra_id,))
+        cursor.execute("SELECT RA_ID FROM RAs WHERE RA_ID = %s", (ra_id,))
         if not cursor.fetchone():
             return jsonify({"error": "RA not found"}), 404
 
@@ -174,7 +172,7 @@ def get_ra_users(ra_id):
 def get_ra_rules(ra_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        cursor.execute("SELECT UserID FROM RAs WHERE UserID = %s", (ra_id,))
+        cursor.execute("SELECT RA_ID FROM RAs WHERE RA_ID = %s", (ra_id,))
         if not cursor.fetchone():
             return jsonify({"error": "RA not found"}), 404
 
@@ -193,7 +191,7 @@ def get_ra_rules(ra_id):
 def get_ra_interventions(ra_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        cursor.execute("SELECT UserID FROM RAs WHERE UserID = %s", (ra_id,))
+        cursor.execute("SELECT RA_ID FROM RAs WHERE RA_ID = %s", (ra_id,))
         if not cursor.fetchone():
             return jsonify({"error": "RA not found"}), 404
 

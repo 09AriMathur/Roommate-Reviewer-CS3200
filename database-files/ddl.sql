@@ -60,7 +60,13 @@ CREATE TABLE Requests (
     Request_Type 	VARCHAR(50) NOT NULL,
     Created_At   	DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     Proposed_Due_Date DATE,
-    Task_ID      	INT
+    Task_ID      	INT,
+    -- Who filed the request. Without this a request can only be traced to a person
+    -- through Task_ID, which is NULL for expunction requests -- so those would be
+    -- unattributable. Users is created above, so the FK can be declared inline.
+    Requested_By_UserID INT,
+    FOREIGN KEY (Requested_By_UserID) REFERENCES Users(UserID)
+        ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 DROP TABLE IF EXISTS Tasks;
@@ -169,21 +175,43 @@ INSERT INTO Users (UserID, First_Name, Last_Name, Email, RA, RoomID, TasksComple
 (4, 'Frank', 'Osei',   'frank.osei@northeastern.edu',   2, 3, 0, 3),
 (5, 'Grace', 'Lin',    'grace.lin@northeastern.edu',    3, 4, 6, 0);
 
-INSERT INTO Requests (Request_ID, Status, Reason, Request_Type, Created_At, Proposed_Due_Date, Task_ID) VALUES
-(1, 'resolved',    'Bathroom sink has been leaking since Friday.',      'maintenance', '2026-08-01 08:45:00', '2026-08-15', NULL),
-(2, 'open',        'Hallway lightbulb outside 102 is burned out.',      'maintenance', '2026-08-02 14:10:00', '2026-08-20', NULL),
-(3, 'in_progress', 'Requesting a chore swap during midterm exam week.', 'chore_swap',  '2026-08-03 07:55:00', '2026-08-25', NULL),
-(4, 'rejected',    'Asked to be reassigned to a single room.',          'room_change', '2026-08-04 19:20:00', '2026-09-01', NULL);
+INSERT INTO Requests (Request_ID, Status, Reason, Request_Type, Created_At, Proposed_Due_Date, Task_ID, Requested_By_UserID) VALUES
+(1, 'resolved',    'Bathroom sink has been leaking since Friday.',      'maintenance', '2026-08-01 08:45:00', '2026-08-15', NULL, 2),
+(2, 'open',        'Hallway lightbulb outside 102 is burned out.',      'maintenance', '2026-08-02 14:10:00', '2026-08-20', NULL, 1),
+(3, 'in_progress', 'Requesting a chore swap during midterm exam week.', 'chore_swap',  '2026-08-03 07:55:00', '2026-08-25', NULL, 4),
+(4, 'rejected',    'Asked to be reassigned to a single room.',          'room_change', '2026-08-04 19:20:00', '2026-09-01', NULL, 3);
 
 INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_UserID, Assigned_UserID, Request_ID) VALUES
 (1, 'Clean shared bathroom',      '2026-08-01 09:00:00', '2026-08-15', 'done',        1, 2, 1),
 (2, 'Replace hallway lightbulb',  '2026-08-02 14:30:00', '2026-08-20', 'todo',        2, 1, 2),
 (3, 'Take out recycling',         '2026-08-03 08:15:00', '2026-08-25', 'in_progress', 3, 4, 3),
-(4, 'Vacuum the common room',     '2026-08-04 17:45:00', '2026-08-18', 'missed',      5, 5, NULL);
+(4, 'Vacuum the common room',     '2026-08-04 17:45:00', '2026-08-18', 'missed',      5, 5, NULL),
+-- Frank Osei (UserID 4) carries TasksMissed = 3 but only one task was assigned to him,
+-- so the counter matched nothing. These three missed tasks make it add up and give the
+-- accountability dashboard (story 3.5) and strike expunction (story 3.6) real rows to
+-- work with -- a strike is an open report about a task assigned to you.
+(5, 'Take out trash',             '2026-07-18 09:00:00', '2026-07-20', 'missed',      3, 4, NULL),
+(6, 'Wipe down counters',         '2026-06-13 18:30:00', '2026-06-15', 'missed',      1, 4, NULL),
+(7, 'Clean the microwave',        '2026-07-02 12:00:00', '2026-07-04', 'missed',      3, 4, NULL);
 
 UPDATE Requests SET Task_ID = 1 WHERE Request_ID = 1;
 UPDATE Requests SET Task_ID = 2 WHERE Request_ID = 2;
 UPDATE Requests SET Task_ID = 3 WHERE Request_ID = 3;
+
+-- Requests using Persona 3 (Ronny RuleBreaker) vocabulary: extension / dispute /
+-- expunction / swap. Inserted after Tasks so Task_ID can be set directly rather
+-- than backfilled. Frank Osei (UserID 4, 0 completed / 3 missed) is the Ronny
+-- stand-in; Erin Walsh (3) shares RoomID 3 with him.
+-- Requests 7, 8 and 10 carry Task_ID = NULL: a dispute challenges a report and an
+-- expunction challenges a strike, so neither points at a task. Those rows are
+-- traceable to a person only through Requested_By_UserID.
+INSERT INTO Requests (Request_ID, Status, Reason, Request_Type, Created_At, Proposed_Due_Date, Task_ID, Requested_By_UserID) VALUES
+(5,  'open',     'Work shift ran long -- requesting two extra days on recycling.',   'extension',  '2026-08-05 21:40:00', '2026-08-28', 3,    4),
+(6,  'open',     'Offering recycling in exchange for a later common-room chore.',    'swap',       '2026-08-06 08:05:00', NULL,         3,    4),
+(7,  'open',     'Disputing report #3: I was away that week, photo evidence in-app.', 'dispute',   '2026-08-06 19:15:00', NULL,         NULL, 4),
+(8,  'open',     'Requesting the June strike be voided -- 11 tasks on time since.',  'expunction', '2026-08-07 12:30:00', NULL,         NULL, 4),
+(9,  'resolved', 'Exam week conflict; roommates approved the later date.',           'extension',  '2026-08-02 16:20:00', '2026-08-21', 4,    5),
+(10, 'rejected', 'Disputed the vacuum mark, roommates voted it down.',               'dispute',    '2026-08-04 09:50:00', NULL,         NULL, 3);
 
 INSERT INTO RA_Intervention (RequestID, Description, Status, UserID, RA) VALUES
 (1, 'Three missed chores in a row; weekly check-in scheduled.', 'active',  4, 2),
@@ -193,7 +221,14 @@ INSERT INTO RA_Intervention (RequestID, Description, Status, UserID, RA) VALUES
 INSERT INTO Room_Reports (ReportID, Time_Reported, Status, TaskID, UserID, RequestID) VALUES
 (1, '2026-08-01 10:05:00', 'closed',   1, 1,    1),
 (2, '2026-08-02 15:00:00', 'open',     2, 2,    2),
-(3, '2026-08-04 18:00:00', 'reviewed', 4, 5, NULL);
+(3, '2026-08-04 18:00:00', 'reviewed', 4, 5, NULL),
+-- Reports against Frank Osei (UserID 4). Note UserID here is the roommate who FILED
+-- the report; the person blamed is reached through TaskID -> Tasks.Assigned_UserID.
+-- Reports 4 and 5 are open, so Frank has two live strikes; report 5 is the old June one
+-- that expunction request 8 is asking to void, linked through RequestID.
+(4, '2026-07-21 09:15:00', 'open',     5, 3,    NULL),
+(5, '2026-06-16 20:30:00', 'open',     6, 1,    8),
+(6, '2026-07-05 08:40:00', 'closed',   7, 3,    NULL);
 
 INSERT INTO UserAway (AwayID, UserID, Start_Date, End_Date) VALUES
 (1, 1, '2026-07-01', '2026-07-10'),

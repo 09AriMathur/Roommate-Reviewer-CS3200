@@ -62,7 +62,7 @@ if rooms is not None:
     # under an open (pending/active) intervention by looping over each RA.
     users_with_intervention = set()
     for ra in ras:
-        interventions = api_get(f"/ra/ras/{ra['UserID']}/interventions") or []
+        interventions = api_get(f"/ra/ras/{ra['RA_ID']}/interventions") or []
         for intervention in interventions:
             if intervention["Status"] in ONGOING_INTERVENTION_STATUSES:
                 users_with_intervention.add(intervention["UserID"])
@@ -125,7 +125,7 @@ if submitted:
             # and who made a rule, without a separate call per task or rule
             all_users = api_get("/user/users") or []
             user_names = {u["UserID"]: f"{u['First_Name']} {u['Last_Name']}" for u in all_users}
-            ra_names = {ra["UserID"]: f"{ra['First_Name']} {ra['Last_Name']}" for ra in ras}
+            ra_names = {ra["RA_ID"]: f"{ra['First_Name']} {ra['Last_Name']}" for ra in ras}
 
             room_users = api_get(f"/room/rooms/{room_id}/users") or []
             room_user_ids = {u["UserID"] for u in room_users}

@@ -47,6 +47,12 @@ def user_room_reports_nav():
     st.sidebar.page_link("pages/02_User_Room_Reports.py", label="Report", icon="📝")
 
 
+def user_ra_interventions_nav():
+    st.sidebar.page_link(
+        "pages/03_User_RA_Interventions.py", label="RA Interventions", icon="🛠️"
+    )
+
+
 # ---- Role: usaid_worker -----------------------------------------------------
 
 def usaid_worker_home_nav():
@@ -144,6 +150,7 @@ def SideBarLinks(show_home=False):
             user_start_nav()
             user_home_nav()
             user_room_reports_nav()
+            user_ra_interventions_nav()
 
         if st.session_state["role"] == "pol_strat_advisor":
             pol_strat_home_nav()

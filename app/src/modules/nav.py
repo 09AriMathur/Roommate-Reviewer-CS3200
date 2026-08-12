@@ -77,6 +77,34 @@ def ml_model_mgmt_nav():
     )
 
 
+# ---- Role: ra (Residence Advisor) -------------------------------------------
+
+def ra_home_nav():
+    st.sidebar.page_link("pages/00_RA_Home.py", label="RA Home", icon="🏠")
+
+
+def ra_room_reports_nav():
+    st.sidebar.page_link(
+        "pages/01_RA_Room_Reports.py", label="Room Reports", icon="📋"
+    )
+
+
+def ra_preform_overview_nav():
+    st.sidebar.page_link(
+        "pages/02_RA_Preform_Overview.py", label="Performance Overview", icon="📊"
+    )
+
+
+def ra_inter_man_nav():
+    st.sidebar.page_link(
+        "pages/03_RA_Inter_Man.py", label="Intervention Manager", icon="🛠️"
+    )
+
+
+def ra_rules_man_nav():
+    st.sidebar.page_link("pages/04_RA_Rules_Man.py", label="Rules Manager", icon="📜")
+
+
 # ---- Sidebar assembly -------------------------------------------------------
 
 def SideBarLinks(show_home=False):
@@ -114,6 +142,13 @@ def SideBarLinks(show_home=False):
         if st.session_state["role"] == "administrator":
             admin_home_nav()
             ml_model_mgmt_nav()
+
+        if st.session_state["role"] == "ra":
+            ra_home_nav()
+            ra_room_reports_nav()
+            ra_preform_overview_nav()
+            ra_inter_man_nav()
+            ra_rules_man_nav()
 
     # About link appears at the bottom for all roles
     about_page_nav()

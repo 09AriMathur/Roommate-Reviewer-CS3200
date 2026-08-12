@@ -13,6 +13,7 @@ from backend.room_reports.room_report_routes import room_reports
 from backend.requests.request_routes import requests
 from backend.user_away.user_away_routes import user_away
 from backend.dorms.dorm_routes import dorms
+from backend.rules.rule_routes import rules
 
 
 def create_app():
@@ -51,5 +52,6 @@ def create_app():
     app.register_blueprint(requests, url_prefix="/request")
     app.register_blueprint(user_away, url_prefix="/away")
     app.register_blueprint(dorms, url_prefix="/dorm")
+    app.register_blueprint(rules, url_prefix="/rule")
 
     return app

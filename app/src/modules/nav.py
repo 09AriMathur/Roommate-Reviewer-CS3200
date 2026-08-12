@@ -53,6 +53,10 @@ def user_ra_interventions_nav():
     )
 
 
+def past_tasks_nav():
+    st.sidebar.page_link("pages/04_Past_Tasks.py", label="Past Tasks", icon="🗒️")
+
+
 # ---- Role: usaid_worker -----------------------------------------------------
 
 def usaid_worker_home_nav():
@@ -151,6 +155,7 @@ def SideBarLinks(show_home=False):
             user_home_nav()
             user_room_reports_nav()
             user_ra_interventions_nav()
+            past_tasks_nav()
 
         if st.session_state["role"] == "pol_strat_advisor":
             pol_strat_home_nav()

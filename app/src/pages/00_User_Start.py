@@ -34,3 +34,8 @@ if st.button('File a Room Report',
              type='primary',
              use_container_width=True):
     st.switch_page('pages/02_User_Room_Reports.py')
+
+if st.button('Request an RA Intervention',
+             type='primary',
+             use_container_width=True):
+    st.switch_page('pages/03_User_RA_Interventions.py')

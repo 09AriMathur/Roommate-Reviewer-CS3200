@@ -1,6 +1,6 @@
+from datetime import date
 from email.utils import parsedate_to_datetime
 
-import pandas as pd
 import requests
 import streamlit as st
 from modules.nav import SideBarLinks
@@ -13,6 +13,7 @@ USER_ID = st.session_state['user_id']
 
 USER_API_URL = "http://web-api:4000/user"
 ROOM_API_URL = "http://web-api:4000/room"
+TASK_API_URL = "http://web-api:4000/task"
 
 try:
     user_response = requests.get(f"{USER_API_URL}/users/{USER_ID}")
@@ -55,11 +56,22 @@ except requests.exceptions.RequestException as e:
     st.error(f"Could not reach the API: {e}")
     st.stop()
 
-tasks = list(tasks_by_id.values())
+today = date.today()
+
+# This view is a history of finished business. "Done" tasks show up as soon
+# as they're completed, regardless of due date. "Missed" tasks only belong
+# here once their due date has actually passed.
+tasks = [
+    t for t in tasks_by_id.values()
+    if t['status'] == 'done'
+    or (
+        t['status'] == 'missed'
+        and t.get('due_date')
+        and parsedate_to_datetime(t['due_date']).date() < today
+    )
+]
 
 STATUS_LABELS = {
-    'todo': 'To Do',
-    'in_progress': 'In Progress',
     'done': 'Done',
     'missed': 'Missed',
 }
@@ -95,13 +107,17 @@ def sort_key(task):
 
 filtered_tasks.sort(key=sort_key, reverse=True)
 
-metric_cols = st.columns(4)
+metric_cols = st.columns(3)
 metric_cols[0].metric("Total Tasks", len(tasks))
 metric_cols[1].metric("Done", sum(1 for t in tasks if t['status'] == 'done'))
 metric_cols[2].metric("Missed", sum(1 for t in tasks if t['status'] == 'missed'))
-metric_cols[3].metric("Open (To Do / In Progress)", sum(1 for t in tasks if t['status'] in ('todo', 'in_progress')))
 
-rows = []
+COLUMN_WIDTHS = [3, 2, 2, 2, 2, 2, 1]
+
+header_cols = st.columns(COLUMN_WIDTHS)
+for col, label in zip(header_cols, ["Task", "Created By", "Assigned To", "Status", "Due Date", "Created", ""]):
+    col.markdown(f"**{label}**")
+
 for task in filtered_tasks:
     assignee = member_by_id.get(task.get('Assigned_UserID'))
     assignee_name = f"{assignee['First_Name']} {assignee['Last_Name']}" if assignee else "Unassigned"
@@ -109,20 +125,22 @@ for task in filtered_tasks:
     creator = member_by_id.get(task.get('Created_UserID'))
     creator_name = f"{creator['First_Name']} {creator['Last_Name']}" if creator else "Unknown"
 
-    rows.append({
-        "Task": task['Task_Name'],
-        "Created By": creator_name,
-        "Assigned To": assignee_name,
-        "Status": STATUS_LABELS.get(task['status'], task['status']),
-        "Due Date": parsedate_to_datetime(task['due_date']).strftime('%b %d, %Y') if task.get('due_date') else "—",
-        "Created": parsedate_to_datetime(task['Created_At']).strftime('%b %d, %Y'),
-    })
+    due_date_label = parsedate_to_datetime(task['due_date']).strftime('%b %d, %Y') if task.get('due_date') else "—"
+    created_label = parsedate_to_datetime(task['Created_At']).strftime('%b %d, %Y')
 
-st.dataframe(
-    pd.DataFrame(rows, columns=["Task", "Created By", "Assigned To", "Status", "Due Date", "Created"]),
-    use_container_width=True,
-    hide_index=True,
-)
+    row_cols = st.columns(COLUMN_WIDTHS)
+    row_cols[0].markdown(task['Task_Name'])
+    row_cols[1].markdown(creator_name)
+    row_cols[2].markdown(assignee_name)
+    row_cols[3].markdown(STATUS_LABELS.get(task['status'], task['status']))
+    row_cols[4].markdown(due_date_label)
+    row_cols[5].markdown(created_label)
+    if row_cols[6].button("🗑️", key=f"delete_task_{task['Task_ID']}", help="Delete this task"):
+        delete_response = requests.delete(f"{TASK_API_URL}/tasks/{task['Task_ID']}")
+        if delete_response.ok:
+            st.rerun()
+        else:
+            st.error("Could not delete task.")
 
 if not filtered_tasks:
     st.markdown(":gray[*No tasks match the current filters*]")

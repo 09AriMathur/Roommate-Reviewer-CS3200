@@ -11,7 +11,7 @@ SideBarLinks()
 
 # Hardcoded for now -- there is no real login flow yet, so we always
 # show the dashboard for this UserID.
-USER_ID = 10
+USER_ID = st.session_state['user_id']
 
 USER_API_URL = "http://web-api:4000/user"
 TASK_API_URL = "http://web-api:4000/task"

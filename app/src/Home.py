@@ -71,11 +71,10 @@ if st.button('Act as System Administrator',
     st.session_state['first_name'] = 'SysAdmin'
     st.switch_page('pages/20_Admin_Home.py')
 
-
-if st.button('user home',
+if st.button('User Page',
         type='primary',
         use_container_width=True):
         st.session_state['authenticated'] = True
         st.session_state['role'] = 'user'
-        st.session_state['first_name'] = 'Test User'
+        st.session_state['user_id'] = 31
         st.switch_page('pages/00_User_Start.py')

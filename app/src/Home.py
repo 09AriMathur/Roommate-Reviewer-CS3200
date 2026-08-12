@@ -76,7 +76,7 @@ if st.button('User Page',
         use_container_width=True):
         st.session_state['authenticated'] = True
         st.session_state['role'] = 'user'
-        st.session_state['first_name'] = 'Test User'
+        st.session_state['user_id'] = 43
         st.switch_page('pages/00_User_Start.py')
 if st.button('Act as Carol, a Residence Advisor',
             type='primary',

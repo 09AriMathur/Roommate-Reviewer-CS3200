@@ -46,7 +46,7 @@ users = api_get("/user/users") or []
 rooms = api_get("/room/rooms") or []
 
 if ras:
-    ra_names = {ra["UserID"]: f"{ra['First_Name']} {ra['Last_Name']}" for ra in ras}
+    ra_names = {ra["RA_ID"]: f"{ra['First_Name']} {ra['Last_Name']}" for ra in ras}
     room_by_id_of_user = {u["UserID"]: u["RoomID"] for u in users}
     room_by_room_id = {r["RoomID"]: r for r in rooms}
 
@@ -54,7 +54,7 @@ if ras:
     # looping over each RA (no "all interventions" route exists)
     all_interventions = []
     for ra in ras:
-        all_interventions += api_get(f"/ra/ras/{ra['UserID']}/interventions") or []
+        all_interventions += api_get(f"/ra/ras/{ra['RA_ID']}/interventions") or []
 
     active_rows = []
     closed_rows = []

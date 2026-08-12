@@ -49,7 +49,7 @@ if rooms is not None:
     # is only exposed per-RA (no "all interventions" route exists) -------------
     all_interventions = []
     for ra in ras:
-        all_interventions += api_get(f"/ra/ras/{ra['UserID']}/interventions") or []
+        all_interventions += api_get(f"/ra/ras/{ra['RA_ID']}/interventions") or []
 
     total_interventions = len(all_interventions)
     completed_interventions = sum(1 for i in all_interventions if i["Status"] == "closed")

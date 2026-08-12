@@ -70,3 +70,12 @@ if st.button('Act as System Administrator',
     st.session_state['role'] = 'administrator'
     st.session_state['first_name'] = 'SysAdmin'
     st.switch_page('pages/20_Admin_Home.py')
+
+
+if st.button('user home',
+        type='primary',
+        use_container_width=True):
+        st.session_state['authenticated'] = True
+        st.session_state['role'] = 'user'
+        st.session_state['first_name'] = 'Test User'
+        st.switch_page('pages/01_User_Home.py')

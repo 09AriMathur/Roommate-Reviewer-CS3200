@@ -591,6 +591,24 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 (220, 'Take out compost', '2026-06-05 17:51:00', '2026-06-10', 'done', 119, 119, NULL),
 (221, 'Clean shared bathroom', '2026-08-01 19:51:00', '2026-08-08', 'done', 120, 120, NULL);
 
+-- Users.TasksCompleted / TasksMissed are denormalized counters, and every completion
+-- percentage in the app is derived from them rather than from Tasks. Mockaroo generated
+-- the counters and the task rows independently, so 116 of the 120 users disagreed with
+-- their own task list -- one user showed 8 completed against 2 actual tasks. Recompute
+-- them from Tasks here, once, so the seed starts truthful. PUT and DELETE on
+-- /task/tasks/<id> keep them in step from then on.
+UPDATE Users u
+LEFT JOIN (
+    SELECT Assigned_UserID          AS uid,
+           SUM(status = 'done')     AS done,
+           SUM(status = 'missed')   AS missed
+    FROM Tasks
+    WHERE Assigned_UserID IS NOT NULL
+    GROUP BY Assigned_UserID
+) t ON t.uid = u.UserID
+SET u.TasksCompleted = COALESCE(t.done, 0),
+    u.TasksMissed    = COALESCE(t.missed, 0);
+
 UPDATE Requests SET Task_ID = 1 WHERE Request_ID = 1;
 UPDATE Requests SET Task_ID = 2 WHERE Request_ID = 2;
 UPDATE Requests SET Task_ID = 3 WHERE Request_ID = 3;

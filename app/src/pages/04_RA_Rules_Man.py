@@ -52,11 +52,16 @@ if not ra_id:
 
 ra = api_get(f"/ra/ras/{ra_id}")
 rooms = api_get("/room/rooms") or []
+dorms = api_get("/dorm/dorms") or []
 
 if ra is None:
     st.stop()
 
-room_labels = {r["RoomID"]: f"Room {r['Room_Number']} (Dorm {r['DormID']})" for r in rooms}
+dorm_names = {d["DormID"]: d["Dorm_Name"] for d in dorms}
+room_labels = {
+    r["RoomID"]: f"Room {r['Room_Number']} ({dorm_names.get(r['DormID'], 'Unknown')})"
+    for r in rooms
+}
 room_label_to_id = {label: room_id for room_id, label in room_labels.items()}
 
 st.write(f"#### Rules Created By {ra['First_Name']} {ra['Last_Name']}")

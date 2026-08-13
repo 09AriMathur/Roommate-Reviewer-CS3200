@@ -1,3 +1,4 @@
+from collections import Counter
 from datetime import date, timedelta
 from email.utils import parsedate_to_datetime
 
@@ -120,17 +121,28 @@ if st.button("File a new request", type="primary"):
     file_request()
 
 
-# ---- Totals across the building ----------------------------------------------
+# ---- My own totals, then the building for context ----------------------------
+
+# /request/requests/stats is an ungrouped count over the whole Requests table. Three
+# of these tiles used to read from it while sitting under a heading that says "My
+# Requests", so a resident with two requests saw "Resolved 190" as if it were theirs.
+# The tiles that describe you are now counted from your own rows.
+mine_by_status = Counter(r['Status'] for r in my_requests)
+
+with st.container(border=True):
+    cols = st.columns(4)
+    cols[0].metric("Requests I've filed", len(my_requests))
+    cols[1].metric("Mine still open", mine_by_status.get('open', 0))
+    cols[2].metric("Mine resolved", mine_by_status.get('resolved', 0))
+    cols[3].metric("Mine rejected", mine_by_status.get('rejected', 0))
 
 stats = api_get("/request/requests/stats", quiet=True)
 if stats:
     by_status = {row['Status']: row['total'] for row in stats.get('by_status', [])}
-    with st.container(border=True):
-        cols = st.columns(4)
-        cols[0].metric("Requests I've filed", len(my_requests))
-        cols[1].metric("Open building-wide", by_status.get('open', 0))
-        cols[2].metric("Resolved", by_status.get('resolved', 0))
-        cols[3].metric("Rejected", by_status.get('rejected', 0))
+    st.caption(
+        f"Across the building: {stats.get('total', 0)} requests, "
+        f"{by_status.get('open', 0)} still open."
+    )
 
 
 # ---- My requests -------------------------------------------------------------

@@ -74,7 +74,10 @@ with main:
 
     remaining = STRIKE_LIMIT - open_strikes
     if remaining <= 0:
-        st.error("Your RA has been notified. Contesting a strike is the way back.")
+        # Nothing here notifies an RA -- the only path to one is the resident opening
+        # Ask My RA. The strike-track label above says "RA notified" as the name of
+        # the third step, not as a claim that a message went out.
+        st.error("This is RA-conversation territory. Contesting a strike is the way back.")
     elif remaining == 1:
         st.warning("One more open report and this goes to your RA.")
     else:

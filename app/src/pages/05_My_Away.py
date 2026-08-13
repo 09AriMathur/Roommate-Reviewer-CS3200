@@ -53,7 +53,10 @@ def add_away():
     chosen = st.date_input(
         "Which days will you be gone?",
         value=(today, today + timedelta(days=3)),
-        min_value=today - timedelta(days=365),
+        # Away dates tell the rotation to skip you, which only means anything going
+        # forward. Allowing a past start let a resident backdate an absence over a
+        # chore they had already been marked down for.
+        min_value=today,
     )
 
     # A range picker hands back a single date until the second one is chosen.
@@ -115,9 +118,22 @@ for period in my_away:
 
         st.badge(state[0], color=state[1])
 
+        # A period that has already ended is a record of where you were, not a plan.
+        # Editing or deleting one lets a resident rewrite their whereabouts for a week
+        # they were reported on, so finished periods are read-only.
+        if end < today:
+            st.caption(
+                "These dates have already passed, so they can no longer be changed."
+            )
+            continue
+
         edited = st.date_input(
             "Change these dates",
             value=(to_date(current['Start_Date']), to_date(current['End_Date'])),
+            # A period already under way started in the past, and Streamlit refuses a
+            # value below min_value, so the floor is its own start date. An upcoming
+            # period floors at today, which is what stops it being backdated.
+            min_value=min(today, start),
             key=f"edit_{away_id}",
         )
 

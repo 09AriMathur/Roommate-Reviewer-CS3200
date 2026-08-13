@@ -107,9 +107,12 @@ with st.container(border=True):
     cols[3].metric("Away dates", away_label)
 
 if open_strikes >= STRIKE_LIMIT:
+    # Careful with the wording: nothing in the app actually notifies an RA at this
+    # threshold. The only thing that reaches one is the resident opening Ask My RA
+    # themselves, so this says what is true rather than claiming a message was sent.
     st.error(
-        f"You have {open_strikes} open strikes. Your RA has been notified. "
-        "Contesting one is the fastest way back."
+        f"You have {open_strikes} open strikes, which is RA-conversation territory. "
+        "Contest one, or raise it with your RA yourself."
     )
 elif open_strikes == STRIKE_LIMIT - 1:
     st.warning(

@@ -9,7 +9,7 @@ st.set_page_config(layout='wide')
 
 SideBarLinks()
 
-if st.session_state.get('role') != 'student':
+if st.session_state.get('role') not in ('user', 'student'):
     st.error('You do not have access to this page.')
     st.stop()
 
@@ -28,12 +28,6 @@ def to_date(value):
     return parsedate_to_datetime(value).date() if value else None
 
 
-st.title('My Chores')
-st.caption(
-    "Everything on your rotation. If a chore isn't going to happen, ask before the "
-    "due date rather than after."
-)
-
 today = date.today()
 
 # One call per status rather than one call filtered client-side, so each tab shows
@@ -48,6 +42,48 @@ created = (api_get(f"/user/users/{USER_ID}/tasks/created", quiet=True)
 
 roommates = (api_get(f"/user/users/{USER_ID}/roommates", quiet=True)
              or {}).get('roommates', [])
+roommate_by_id = {r['UserID']: r for r in roommates}
+
+
+@st.dialog("New chore")
+def open_new_task_dialog():
+    new_task_name = st.text_input("Task name")
+    new_due_date = st.date_input("Due date", value=today + timedelta(days=1), min_value=today)
+    assignee_id = st.selectbox(
+        "Assign to",
+        options=[USER_ID] + list(roommate_by_id.keys()),
+        format_func=lambda uid: "Myself" if uid == USER_ID else (
+            f"{roommate_by_id[uid]['First_Name']} {roommate_by_id[uid]['Last_Name']}"
+        ),
+    )
+
+    if st.button("Create chore", type="primary", use_container_width=True):
+        if not new_task_name:
+            st.error("Please enter a task name.")
+            return
+
+        status, body = api_write("POST", "/task/tasks", {
+            "Task_Name": new_task_name,
+            "due_date": new_due_date.isoformat(),
+            "Created_UserID": USER_ID,
+        })
+        if status != 201:
+            return
+
+        api_write("PUT", f"/task/tasks/{body['TaskID']}", {"Assigned_UserID": assignee_id})
+        st.rerun()
+
+
+title_col, new_task_col = st.columns([5, 1], vertical_alignment="bottom")
+with title_col:
+    st.title('My Chores')
+    st.caption(
+        "Everything on your rotation. If a chore isn't going to happen, ask before the "
+        "due date rather than after."
+    )
+with new_task_col:
+    if st.button("New chore +", type="primary", use_container_width=True):
+        open_new_task_dialog()
 
 
 @st.dialog("Ask for help with this chore")

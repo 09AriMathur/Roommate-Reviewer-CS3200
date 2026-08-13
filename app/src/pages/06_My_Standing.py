@@ -11,7 +11,7 @@ st.set_page_config(layout='wide')
 
 SideBarLinks()
 
-if st.session_state.get('role') != 'student':
+if st.session_state.get('role') not in ('user', 'student'):
     st.error('You do not have access to this page.')
     st.stop()
 
@@ -225,7 +225,7 @@ with main:
                         f"({detail.get('Description') or 'no description'}) be cleared."
                     ),
                 }
-                st.switch_page('pages/12_My_Requests.py')
+                st.switch_page('pages/03_My_Requests.py')
 
 
 # ---- Side panel: chores, requests, away, and the rules being measured against ----

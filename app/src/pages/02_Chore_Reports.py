@@ -3,39 +3,31 @@ from email.utils import parsedate_to_datetime
 
 import altair as alt
 import pandas as pd
-import requests
 import streamlit as st
+from modules.api import api_get, api_write
 from modules.nav import SideBarLinks
 
 st.set_page_config(layout='wide')
 
 SideBarLinks()
 
-# Hardcoded for now -- there is no real login flow yet, so we always
-# show the dashboard for this UserID.
-USER_ID = st.session_state['user_id']
+if st.session_state.get('role') not in ('user', 'student'):
+    st.error('You do not have access to this page.')
+    st.stop()
 
-USER_API_URL = "http://web-api:4000/user"
-ROOM_API_URL = "http://web-api:4000/room"
-DORM_API_URL = "http://web-api:4000/dorm"
-ROOM_REPORT_API_URL = "http://web-api:4000/room_report"
+USER_ID = st.session_state['user_id']
 
 # Freeze the "new report" timestamp for this session so it reflects when the
 # user opened the form, not the time of the most recent rerun.
 if 'report_draft_time' not in st.session_state:
     st.session_state['report_draft_time'] = datetime.now()
 
-try:
-    user_response = requests.get(f"{USER_API_URL}/users/{USER_ID}")
-    user_response.raise_for_status()
-    user = user_response.json()
-
-    roommates_response = requests.get(f"{USER_API_URL}/users/{USER_ID}/roommates")
-    roommates_response.raise_for_status()
-    roommates = roommates_response.json().get('roommates', [])
-except requests.exceptions.RequestException as e:
-    st.error(f"Could not reach the API: {e}")
+user = api_get(f"/user/users/{USER_ID}")
+if user is None:
     st.stop()
+
+roommates = (api_get(f"/user/users/{USER_ID}/roommates", quiet=True)
+             or {}).get('roommates', [])
 
 # The whole suite: everyone whose incomplete tasks and reports should be
 # visible on this page, not just the tasks/reports belonging to USER_ID.
@@ -47,30 +39,18 @@ cutoff = today - timedelta(days=14)
 
 dorm_name = None
 if user.get('RoomID'):
-    try:
-        room_response = requests.get(f"{ROOM_API_URL}/rooms/{user['RoomID']}")
-        room_response.raise_for_status()
-        room = room_response.json()
-
-        dorm_response = requests.get(f"{DORM_API_URL}/dorms/{room['DormID']}")
-        dorm_response.raise_for_status()
-        dorm_name = dorm_response.json().get('Dorm_Name')
-    except requests.exceptions.RequestException:
-        dorm_name = None
+    room = api_get(f"/room/rooms/{user['RoomID']}", quiet=True)
+    if room:
+        dorm = api_get(f"/dorm/dorms/{room['DormID']}", quiet=True)
+        dorm_name = (dorm or {}).get('Dorm_Name')
 
 # A report has to name a task, so only tasks that aren't done yet are
 # reportable. Pulled per-member since assigned tasks are only exposed per-user.
 open_tasks = []
-try:
-    for member in group:
-        tasks_response = requests.get(f"{USER_API_URL}/users/{member['UserID']}/tasks/assigned")
-        tasks_response.raise_for_status()
-        for task in tasks_response.json().get('assigned_tasks', []):
-            if task['status'] != 'done':
-                open_tasks.append(task)
-except requests.exceptions.RequestException as e:
-    st.error(f"Could not reach the API: {e}")
-    st.stop()
+for member in group:
+    member_tasks = (api_get(f"/user/users/{member['UserID']}/tasks/assigned", quiet=True)
+                     or {}).get('assigned_tasks', [])
+    open_tasks.extend(t for t in member_tasks if t['status'] != 'done')
 
 # Drop stale tasks (no due date can't be judged as "old", so those stay) and
 # show the most recently due tasks first.
@@ -86,17 +66,12 @@ open_tasks.sort(
 # Reports naming anyone in the suite -- this is what makes a report visible to
 # the whole roommate group, not just the person who filed it.
 reports = []
-try:
-    for member in group:
-        reports_response = requests.get(
-            f"{ROOM_REPORT_API_URL}/users/{member['UserID']}/room_reports",
-            params={"role": "named"},
-        )
-        reports_response.raise_for_status()
-        reports.extend(reports_response.json())
-except requests.exceptions.RequestException as e:
-    st.error(f"Could not reach the API: {e}")
-    st.stop()
+for member in group:
+    member_reports = api_get(
+        f"/room_report/users/{member['UserID']}/room_reports",
+        params={"role": "named"}, quiet=True,
+    ) or []
+    reports.extend(member_reports)
 
 # Most recent first, and drop anything older than the 14-day window.
 reports = [
@@ -150,7 +125,7 @@ def render_report_row(report):
             st.caption(report['Description'])
 
 
-st.title("Reports")
+st.title("Chore Reports")
 st.caption(f"{dorm_name + ' — ' if dorm_name else ''}Chore reports for your roommate group")
 
 reports_col, new_report_col = st.columns([2, 3])
@@ -182,17 +157,14 @@ with new_report_col:
             details = st.text_area("Other details...", label_visibility="collapsed", placeholder="Other details...")
 
             if st.button("Create Report", type="primary", use_container_width=True):
-                create_response = requests.post(
-                    f"{ROOM_REPORT_API_URL}/room_reports",
-                    json={
-                        "TaskID": selected_task['Task_ID'],
-                        "UserID": USER_ID,
-                        "Description": details or f"{selected_task['Task_Name']} was not completed.",
-                    },
-                )
-                create_response.raise_for_status()
-                st.session_state.pop('report_draft_time', None)
-                st.rerun()
+                status, _ = api_write("POST", "/room_report/room_reports", {
+                    "TaskID": selected_task['Task_ID'],
+                    "UserID": USER_ID,
+                    "Description": details or f"{selected_task['Task_Name']} was not completed.",
+                })
+                if status == 201:
+                    st.session_state.pop('report_draft_time', None)
+                    st.rerun()
 
 with st.container(border=True):
     st.subheader("Reports This Week")

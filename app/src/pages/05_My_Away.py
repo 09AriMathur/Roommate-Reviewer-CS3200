@@ -9,7 +9,7 @@ st.set_page_config(layout='wide')
 
 SideBarLinks()
 
-if st.session_state.get('role') != 'student':
+if st.session_state.get('role') not in ('user', 'student'):
     st.error('You do not have access to this page.')
     st.stop()
 

@@ -3,6 +3,7 @@ from email.utils import parsedate_to_datetime
 
 import streamlit as st
 from modules.api import api_get
+from modules.labels import chore_state, is_reportable
 from modules.nav import SideBarLinks
 
 st.set_page_config(layout='wide')
@@ -138,13 +139,11 @@ with left:
         st.caption("Nothing on your list right now.")
     for task in dated[:5]:
         due = to_date(task['due_date'])
+        label, color = chore_state(task, today)
         with st.container(border=True):
             name_col, due_col = st.columns([3, 2])
             name_col.write(task['Task_Name'])
-            if due < today:
-                due_col.badge(f"Overdue · {due.strftime('%b %d')}", color="red")
-            else:
-                due_col.badge(due.strftime('%b %d'), color="gray")
+            due_col.badge(f"{label} · {due.strftime('%b %d')}", color=color)
 
 with right:
     st.write("### Waiting on a decision")
@@ -155,6 +154,62 @@ with right:
             type_col, reason_col = st.columns([1, 3])
             type_col.badge(req['Request_Type'].replace('_', ' ').title(), color="blue")
             reason_col.write(req.get('Reason') or "_No reason given_")
+
+# ---- Who else lives here, and what they still owe -------------------------------
+
+# A resident could previously see their own list and nothing else, which makes a shared
+# rotation impossible to judge -- there was no way to tell whether the suite was pulling
+# its weight without opening Chore Reports and reading the reportable list.
+st.write("### Around the suite")
+
+roommates = (api_get(f"/user/users/{USER_ID}/roommates", quiet=True)
+             or {}).get('roommates', [])
+
+if not roommates:
+    st.caption("You have no roommates on file.")
+else:
+    st.caption(
+        "What your suitemates still have unfinished. A chore that is overdue or already "
+        "marked missed is one you can report, on the Chore Reports page."
+    )
+
+# One call, so this panel counts exactly what the report picker would offer -- a chore
+# already reported is not offered twice, and should not be advertised here either.
+my_open_reports = {
+    report['TaskID']
+    for report in (api_get(f"/room_report/users/{USER_ID}/room_reports",
+                           params={"role": "filed", "status": "open"}, quiet=True) or [])
+    if report.get('TaskID') is not None
+}
+
+for mate in roommates:
+    # 'missed' belongs here alongside the chores still in play. Leaving it out said a
+    # roommate was all clear while the Chore Reports page was offering their missed chore
+    # to report. Their finished chores stay out: those are not outstanding.
+    mate_tasks = (api_get(f"/user/users/{mate['UserID']}/tasks/assigned",
+                          params={"status": "todo,in_progress,missed"}, quiet=True)
+                  or {}).get('assigned_tasks', [])
+    reportable = [t for t in mate_tasks
+                  if is_reportable(t, today) and t['Task_ID'] not in my_open_reports]
+    # Only chores with time left on them have a "next due" to show; the rest are the
+    # ones the badge is already reporting on.
+    upcoming = sorted(to_date(t['due_date']) for t in mate_tasks
+                      if t.get('due_date') and not is_reportable(t, today))
+
+    with st.container(border=True):
+        name_col, count_col, due_col = st.columns([3, 2, 2])
+        name_col.write(f"{mate['First_Name']} {mate['Last_Name']}")
+        count_col.write(f"{len(mate_tasks)} unfinished")
+
+        if reportable:
+            due_col.badge(f"{len(reportable)} to report", color="red")
+        elif upcoming:
+            due_col.badge(f"Next {upcoming[0].strftime('%b %d')}", color="gray")
+        elif mate_tasks:
+            due_col.caption("Nothing to report")
+        else:
+            due_col.caption("All clear")
+
 
 # ---- Everywhere else a resident can go -----------------------------------------
 

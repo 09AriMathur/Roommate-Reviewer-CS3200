@@ -108,6 +108,9 @@ DROP TABLE IF EXISTS Room_Reports;
 CREATE TABLE Room_Reports (
     ReportID  	INT AUTO_INCREMENT PRIMARY KEY,
     Time_Reported DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- When the report was acted on, which is a different date from Time_Reported (when
+    -- it was filed) and from the chore's due_date. NULL while the report is still open.
+    Reviewed_At   DATETIME,
     Status    	ENUM('open','reviewed','closed') NOT NULL DEFAULT 'open',
     TaskID    	INT,
     UserID    	INT NOT NULL,
@@ -232,7 +235,10 @@ INSERT INTO Rooms (DormID, Room_Number, RA) VALUES
 -- Mock Users generated with Mockaroo
 INSERT INTO Users (UserID, First_Name, Last_Name, Email, RA, DormID, Room_Number, TasksCompleted, TasksMissed) VALUES
 (1, 'Alice', 'Nguyen', 'alice.nguyen@northeastern.edu', 1, 1, 101, 4, 0),
-(2, 'Bob', 'Smith', 'bob.smith@northeastern.edu', 1, 1, 102, 2, 1),
+-- Bob shares 101 with Alice. They create chores for each other (Tasks 1 and 2) and
+-- report each other (Room_Reports 1 and 2), and both only make sense between roommates,
+-- so the room number has to match Alice's rather than sitting in 102.
+(2, 'Bob', 'Smith', 'bob.smith@northeastern.edu', 1, 1, 101, 2, 1),
 (3, 'Erin', 'Walsh', 'erin.walsh@northeastern.edu', 2, 2, 201, 1, 2),
 (4, 'Frank', 'Osei', 'frank.osei@northeastern.edu', 2, 2, 201, 0, 3),
 (5, 'Grace', 'Lin', 'grace.lin@northeastern.edu', 3, 3, 305, 6, 0),
@@ -716,7 +722,9 @@ INSERT INTO RA_Intervention (RequestID, Description, Status, UserID, RA) VALUES
 INSERT INTO Room_Reports (ReportID, Time_Reported, Status, TaskID, UserID, RequestID, Description) VALUES
 (1, '2026-08-01 10:05:00', 'closed',   1, 1,    1, 'Bathroom hasnt been cleaned yet'),
 (2, '2026-08-02 15:00:00', 'open',     2, 2,    2, 'Hallway is still super dark'),
-(3, '2026-08-04 18:00:00', 'reviewed', 4, 5, NULL, 'Common room floor is super dirty'),
+-- Task 4 is Grace's (UserID 5), so the filer has to be someone else in 3/305 --
+-- Elena (108). A resident cannot report their own chore.
+(3, '2026-08-04 18:00:00', 'reviewed', 4, 108, NULL, 'Common room floor is super dirty'),
 -- Reports against Frank Osei (UserID 4). Note UserID here is the roommate who FILED
 -- the report; the person blamed is reached through TaskID -> Tasks.Assigned_UserID.
 -- Reports 4 and 5 are open, so Frank has two live strikes; report 5 is the old June one
@@ -1019,3 +1027,117 @@ INSERT INTO Rules (RuleID, UserID, Descr, RA_ID, DormID, Room_Number) VALUES
 (31, 112, 'Shared bathroom must be cleaned on a rotating weekly schedule.', 14, 4, 314),
 (32, 101, 'No overnight guests without roommate approval.', 2, 2, 204),
 (33, 28, 'Noise complaints should be reported to the RA, not other residents.', 16, 4, 108);
+
+
+-- ===========================================================================
+-- Seed reconciliation
+--
+-- The mock rows above were generated per table, so the foreign keys line up but the
+-- meaning does not: reports ended up filed by residents in other buildings, filed
+-- against chores that were not due yet, and swap requests ended up pointing at chores
+-- that had already been finished. Every one of those combinations is rejected by the
+-- API, so leaving them in seeds the app with rows it would refuse to create -- which is
+-- what made the resident pages read as though the rules were not being applied.
+--
+-- These statements run once, right after the inserts, and leave a database where every
+-- row is one the API would accept today. They are written as reconciliation rather than
+-- hand-edits because the mock blocks are regenerated wholesale.
+-- ===========================================================================
+
+-- A report is one roommate saying the shared space went unattended, and the strike it
+-- produces escalates to that room's RA -- so the filer has to live there. Where the
+-- generated filer does not, hand the report to an actual roommate of the accused.
+UPDATE Room_Reports rp
+  JOIN Tasks t        ON rp.TaskID = t.Task_ID
+  JOIN Users assignee ON t.Assigned_UserID = assignee.UserID
+  JOIN Users filer    ON rp.UserID = filer.UserID
+SET rp.UserID = (
+        SELECT mate.UserID
+        FROM Users mate
+        WHERE mate.DormID = assignee.DormID
+          AND mate.Room_Number = assignee.Room_Number
+          AND mate.UserID <> assignee.UserID
+        ORDER BY mate.UserID
+        LIMIT 1
+    )
+WHERE (filer.DormID, filer.Room_Number) <> (assignee.DormID, assignee.Room_Number)
+  AND EXISTS (
+        SELECT 1
+        FROM Users mate
+        WHERE mate.DormID = assignee.DormID
+          AND mate.Room_Number = assignee.Room_Number
+          AND mate.UserID <> assignee.UserID
+    );
+
+-- Nobody reports themselves; the API answers 409 for it.
+DELETE rp FROM Room_Reports rp
+  JOIN Tasks t ON rp.TaskID = t.Task_ID
+WHERE rp.UserID = t.Assigned_UserID;
+
+-- A single-occupancy room has nobody to file the report, so the row cannot be repaired.
+DELETE rp FROM Room_Reports rp
+  JOIN Tasks t        ON rp.TaskID = t.Task_ID
+  JOIN Users assignee ON t.Assigned_UserID = assignee.UserID
+  JOIN Users filer    ON rp.UserID = filer.UserID
+WHERE (filer.DormID, filer.Room_Number) <> (assignee.DormID, assignee.Room_Number);
+
+-- "This was not done" cannot be said before the deadline. The exception is a chore
+-- carrying a request (Tasks.Request_ID): its due date was moved after the fact, so a
+-- report older than the current due date is the honest record of the original deadline.
+DELETE rp FROM Room_Reports rp
+  JOIN Tasks t ON rp.TaskID = t.Task_ID
+WHERE t.status <> 'missed'
+  AND t.Request_ID IS NULL
+  AND (t.due_date IS NULL OR t.due_date >= CURDATE());
+
+-- An open report on a finished chore is a live accusation about something that got done.
+-- Reviewed and closed ones stay: those are the chores finished after being reported.
+DELETE rp FROM Room_Reports rp
+  JOIN Tasks t ON rp.TaskID = t.Task_ID
+WHERE rp.Status = 'open'
+  AND t.status = 'done';
+
+-- Reassigning filers can land two reports from the same person on one chore, which the
+-- API refuses. Keep the earliest.
+DELETE rp FROM Room_Reports rp
+  JOIN Room_Reports keep
+    ON keep.TaskID = rp.TaskID
+   AND keep.UserID = rp.UserID
+   AND keep.ReportID < rp.ReportID
+WHERE rp.TaskID IS NOT NULL;
+
+-- Reviewed_At is new, so nothing in the mock data carries it. Anything already off
+-- 'open' was reviewed at some point after it was filed.
+UPDATE Room_Reports
+SET Reviewed_At = Time_Reported + INTERVAL 2 DAY
+WHERE Status <> 'open';
+
+-- An open swap or extension is a chore someone still has to do. Where the generated row
+-- points at a finished chore, move it to a chore the requester actually has in play.
+UPDATE Requests q
+SET q.Task_ID = (
+        SELECT open_task.Task_ID
+        FROM Tasks open_task
+        WHERE open_task.Assigned_UserID = q.Requested_By_UserID
+          AND open_task.status IN ('todo', 'in_progress')
+        ORDER BY open_task.due_date, open_task.Task_ID
+        LIMIT 1
+    )
+WHERE q.Status = 'open'
+  AND q.Request_Type IN ('swap', 'chore_swap', 'extension')
+  AND EXISTS (
+        SELECT 1 FROM Tasks t
+        WHERE t.Task_ID = q.Task_ID AND t.status IN ('done', 'missed')
+    )
+  AND EXISTS (
+        SELECT 1 FROM Tasks open_task
+        WHERE open_task.Assigned_UserID = q.Requested_By_UserID
+          AND open_task.status IN ('todo', 'in_progress')
+    );
+
+-- Requesters with nothing left in play have nothing to ask about.
+DELETE q FROM Requests q
+  JOIN Tasks t ON q.Task_ID = t.Task_ID
+WHERE q.Status = 'open'
+  AND q.Request_Type IN ('swap', 'chore_swap', 'extension')
+  AND t.status IN ('done', 'missed');

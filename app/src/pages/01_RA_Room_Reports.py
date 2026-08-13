@@ -4,6 +4,7 @@ logger = logging.getLogger(__name__)
 import pandas as pd
 import requests
 import streamlit as st
+from modules.labels import chore_state
 from modules.nav import SideBarLinks
 
 st.set_page_config(layout='wide')
@@ -183,7 +184,9 @@ if submitted:
                 "Created By": user_names.get(t["Created_UserID"], "Unknown"),
                 "Assigned To": user_names.get(t["Assigned_UserID"], "Unassigned"),
                 "Due Date": t["due_date"],
-                "Status": t["status"],
+                # Same wording the residents see on their own chores, rather than the
+                # raw enum value.
+                "Status": chore_state(t)[0],
                 "Created At": t["Created_At"],
             } for t in room_tasks]
 

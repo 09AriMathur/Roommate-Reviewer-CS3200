@@ -56,7 +56,11 @@ my_requests = api_get(f"/request/users/{USER_ID}/requests")
 if my_requests is None:
     st.stop()
 
-assigned = (api_get(f"/user/users/{USER_ID}/tasks/assigned", quiet=True)
+# Only chores still in play. "Assigned" on its own includes everything this resident has
+# ever held, so the picker offered extensions and swaps on chores already marked done --
+# three options against the single chore the My Chores To do tab was showing.
+assigned = (api_get(f"/user/users/{USER_ID}/tasks/assigned",
+                    params={"status": "todo,in_progress"}, quiet=True)
             or {}).get('assigned_tasks', [])
 task_labels = {t['Task_ID']: t['Task_Name'] for t in assigned}
 
@@ -75,7 +79,7 @@ def file_request(default_type="extension", default_reason=""):
     task_id = None
     if request_type in TYPES_NEEDING_TASK:
         if not assigned:
-            st.warning("You have no assigned chores to attach a request to.")
+            st.warning("You have no open chores to attach a request to.")
         else:
             task_id = st.selectbox(
                 "Which chore?",
@@ -83,9 +87,17 @@ def file_request(default_type="extension", default_reason=""):
                 format_func=lambda tid: task_labels.get(tid, f"Task {tid}"),
             )
 
+    # An extension or a swap is a request about a specific chore. Filing one with no
+    # chore attached used to be possible -- only the reason was checked -- and produced a
+    # request nobody could act on, since there was nothing to move or reschedule. With
+    # nothing to attach, the rest of the form has nothing to describe, so it comes out
+    # disabled rather than accepting input that cannot be submitted.
+    blocked = request_type in TYPES_NEEDING_TASK and task_id is None
+
     proposed = None
     if request_type == "extension":
-        proposed = st.date_input("New due date", value=date.today() + timedelta(days=3))
+        proposed = st.date_input("New due date", value=date.today() + timedelta(days=3),
+                                 disabled=blocked)
 
     if request_type == "swap":
         st.caption(
@@ -93,11 +105,18 @@ def file_request(default_type="extension", default_reason=""):
             "records the chore you're giving up, and your roommates agree to the rest."
         )
 
-    reason = st.text_area("Reason", value=default_reason, height=110)
+    reason = st.text_area("Reason", value=default_reason, height=110, disabled=blocked)
 
-    if st.button("Submit request", type="primary", use_container_width=True):
+    if st.button("Submit request", type="primary", use_container_width=True,
+                 disabled=blocked):
         if not reason.strip():
             st.error("Give a reason so your roommates know what they're deciding on.")
+            return
+
+        # The button is disabled in this case, so this is a guard against the chore
+        # disappearing between the dialog opening and the press, not a normal path.
+        if request_type in TYPES_NEEDING_TASK and task_id is None:
+            st.error("Pick the chore this request is about.")
             return
 
         payload = {
@@ -276,12 +295,22 @@ else:
             if not undecided:
                 continue
 
+            swap_task = None
             if is_swap:
-                task = api_get(f"/request/requests/{request_id}",
-                               quiet=True) or {}
-                chore = (task.get('task') or {}).get('Task_Name')
-                if chore:
-                    st.caption(f"Taking this on moves **{chore}** to you.")
+                swap_detail = api_get(f"/request/requests/{request_id}", quiet=True) or {}
+                swap_task = swap_detail.get('task')
+
+                # A chore already marked done or missed has nothing left to hand over,
+                # and reassigning one moves its count onto whoever pressed the button --
+                # taking a finished chore would credit you with completing it.
+                if (swap_task or {}).get('status') not in ('todo', 'in_progress'):
+                    st.caption(
+                        "This chore has already been closed out, so there is nothing "
+                        "left to take on."
+                    )
+                    continue
+
+                st.caption(f"Taking this on moves **{swap_task['Task_Name']}** to you.")
 
             accept_col, decline_col, _ = st.columns([1, 1, 3])
             accept_label = "Take this chore" if is_swap else "Approve"
@@ -293,9 +322,14 @@ else:
                     # Move the chore first. If that fails the request stays open, which
                     # is recoverable; resolving first could leave a settled request
                     # whose chore never actually changed hands.
+                    #
+                    # Status goes back to 'todo' in the same call. A chore taken over is
+                    # a chore you now have to do, so it belongs in your To do tab -- and
+                    # an in_progress chore inherited mid-way would claim you had started
+                    # work you have not.
                     status, _ = api_write(
                         "PUT", f"/task/tasks/{req['Task_ID']}",
-                        {"Assigned_UserID": USER_ID},
+                        {"Assigned_UserID": USER_ID, "Status": "todo"},
                     )
                     ok = status == 200
 

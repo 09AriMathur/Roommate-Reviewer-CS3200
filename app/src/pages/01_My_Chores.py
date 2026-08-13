@@ -3,6 +3,7 @@ from email.utils import parsedate_to_datetime
 
 import streamlit as st
 from modules.api import api_get, api_write
+from modules.labels import chore_state
 from modules.nav import SideBarLinks
 
 st.set_page_config(layout='wide')
@@ -14,13 +15,6 @@ if st.session_state.get('role') not in ('user', 'student'):
     st.stop()
 
 USER_ID = st.session_state['user_id']
-
-STATUS_BADGES = {
-    'todo': ('To Do', 'gray'),
-    'in_progress': ('In Progress', 'blue'),
-    'done': ('Done', 'green'),
-    'missed': ('Missed', 'red'),
-}
 
 
 def to_date(value):
@@ -99,9 +93,16 @@ def ask_about(task):
     if due:
         st.caption(f"Currently due {due.strftime('%B %d, %Y')}")
 
+    # What can be asked for depends on where the chore stands. A missed chore has already
+    # been marked down, so the only thing left is to contest that; more time on a deadline
+    # that has already been ruled on is not a thing to ask for. An open chore has not been
+    # marked down yet, so there is nothing to dispute.
+    options = (["dispute"] if task['status'] == 'missed'
+               else ["extension", "swap"])
+
     request_type = st.radio(
         "What do you need?",
-        ["extension", "swap", "dispute"],
+        options,
         format_func=lambda t: {
             "extension": "More time on it",
             "swap": "Someone to take it",
@@ -164,7 +165,7 @@ def render_task(task, can_complete=False, can_ask=False):
     erases the record. Contesting it is the proper route, so Ask stays available.
     """
     due = to_date(task.get('due_date'))
-    overdue = due and due < today and task['status'] not in ('done', 'missed')
+    label, color = chore_state(task, today)
 
     with st.container(border=True):
         name_col, due_col, action_col = st.columns([4, 2, 3])
@@ -176,16 +177,8 @@ def render_task(task, can_complete=False, can_ask=False):
                 st.write(task['Task_Name'])
 
         with due_col:
-            if overdue:
-                st.badge(f"Overdue · {due.strftime('%b %d')}", color="red")
-            elif due:
-                label, color = STATUS_BADGES.get(task['status'],
-                                                 (task['status'], 'gray'))
-                st.badge(f"{label} · {due.strftime('%b %d')}", color=color)
-            else:
-                label, color = STATUS_BADGES.get(task['status'],
-                                                 (task['status'], 'gray'))
-                st.badge(label, color=color)
+            st.badge(f"{label} · {due.strftime('%b %d')}" if due else label,
+                     color=color)
 
         if not (can_complete or can_ask):
             return

@@ -5,6 +5,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 from modules.api import api_get
+from modules.labels import chore_state
 from modules.nav import SideBarLinks
 
 st.set_page_config(layout='wide')
@@ -242,13 +243,11 @@ with side:
         st.caption("Nothing outstanding.")
     for task in todo[:5]:
         due = to_date(task.get('due_date'))
+        label, _ = chore_state(task, today)
         with st.container(border=True):
             st.write(task['Task_Name'])
             if due:
-                st.caption(
-                    f"Overdue · {due.strftime('%b %d')}" if due < today
-                    else f"Due {due.strftime('%b %d')}"
-                )
+                st.caption(f"{label} · {due.strftime('%b %d')}")
 
     # Shorter than the landing page's "Waiting on a decision" -- that heading wraps in
     # this narrower rail.

@@ -7,14 +7,15 @@ rules = Blueprint("rules", __name__)
 
 
 # Get all rules, with optional filtering by room, RA, or user
-# Example: /rule/rules?room_id=1
+# Example: /rule/rules?dorm_id=2&room_number=201
 @rules.route("/rules", methods=["GET"])
 def get_all_rules():
     cursor = get_db().cursor(dictionary=True)
     try:
         current_app.logger.info('GET /rule/rules')
 
-        room_id = request.args.get("room_id")
+        dorm_id = request.args.get("dorm_id")
+        room_number = request.args.get("room_number")
         ra_id = request.args.get("ra_id")
         user_id = request.args.get("user_id")
 
@@ -22,9 +23,11 @@ def get_all_rules():
         query = "SELECT * FROM Rules WHERE 1=1"
         params = []
 
-        if room_id:
-            query += " AND RoomID = %s"
-            params.append(room_id)
+        # A room is identified by its dorm and its number together, so both have to
+        # be supplied for the filter to name a single room.
+        if dorm_id and room_number:
+            query += " AND DormID = %s AND Room_Number = %s"
+            params.extend([dorm_id, room_number])
         if ra_id:
             query += " AND RA_ID = %s"
             params.append(ra_id)
@@ -66,7 +69,7 @@ def get_rule(rule_id):
 
 # Add a new rule
 # Required field: Descr
-# Optional: RoomID, RA_ID, UserID
+# Optional: DormID + Room_Number, RA_ID, UserID
 # Example: POST /rule/rules with JSON body
 @rules.route("/rules", methods=["POST"])
 def create_rule():
@@ -77,13 +80,18 @@ def create_rule():
         if "Descr" not in data or not str(data["Descr"]).strip():
             return jsonify({"error": "Missing required field: Descr"}), 400
 
-        if data.get("RoomID") is not None:
-            cursor.execute("SELECT RoomID FROM Rooms WHERE RoomID = %s", (data["RoomID"],))
+        if data.get("DormID") is not None and data.get("Room_Number") is not None:
+            cursor.execute(
+                "SELECT 1 FROM Rooms WHERE DormID = %s AND Room_Number = %s",
+                (data["DormID"], data["Room_Number"]),
+            )
             if not cursor.fetchone():
                 return jsonify({"error": "Room not found"}), 404
 
         if data.get("RA_ID") is not None:
-            cursor.execute("SELECT UserID FROM RAs WHERE UserID = %s", (data["RA_ID"],))
+            # RAs is keyed by RA_ID; it has no UserID column, so the old query raised
+            # error 1054 and turned every RA-scoped rule write into a 500.
+            cursor.execute("SELECT RA_ID FROM RAs WHERE RA_ID = %s", (data["RA_ID"],))
             if not cursor.fetchone():
                 return jsonify({"error": "RA not found"}), 404
 
@@ -93,12 +101,13 @@ def create_rule():
                 return jsonify({"error": "User not found"}), 404
 
         query = """
-            INSERT INTO Rules (Descr, RoomID, RA_ID, UserID)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO Rules (Descr, DormID, Room_Number, RA_ID, UserID)
+            VALUES (%s, %s, %s, %s, %s)
         """
         cursor.execute(query, (
             data["Descr"].strip(),
-            data.get("RoomID"),
+            data.get("DormID"),
+            data.get("Room_Number"),
             data.get("RA_ID"),
             data.get("UserID"),
         ))
@@ -114,7 +123,7 @@ def create_rule():
 
 
 # Update an existing rule
-# Can update Descr, RoomID, RA_ID, and/or UserID
+# Can update Descr, DormID + Room_Number, RA_ID, and/or UserID
 # Example: PUT /rule/rules/1 with JSON body containing fields to update
 @rules.route("/rules/<int:rule_id>", methods=["PUT"])
 def update_rule(rule_id):
@@ -129,13 +138,18 @@ def update_rule(rule_id):
         if "Descr" in data and not str(data["Descr"]).strip():
             return jsonify({"error": "Descr cannot be empty"}), 400
 
-        if data.get("RoomID") is not None:
-            cursor.execute("SELECT RoomID FROM Rooms WHERE RoomID = %s", (data["RoomID"],))
+        if data.get("DormID") is not None and data.get("Room_Number") is not None:
+            cursor.execute(
+                "SELECT 1 FROM Rooms WHERE DormID = %s AND Room_Number = %s",
+                (data["DormID"], data["Room_Number"]),
+            )
             if not cursor.fetchone():
                 return jsonify({"error": "Room not found"}), 404
 
         if data.get("RA_ID") is not None:
-            cursor.execute("SELECT UserID FROM RAs WHERE UserID = %s", (data["RA_ID"],))
+            # RAs is keyed by RA_ID; it has no UserID column, so the old query raised
+            # error 1054 and turned every RA-scoped rule write into a 500.
+            cursor.execute("SELECT RA_ID FROM RAs WHERE RA_ID = %s", (data["RA_ID"],))
             if not cursor.fetchone():
                 return jsonify({"error": "RA not found"}), 404
 
@@ -145,7 +159,7 @@ def update_rule(rule_id):
                 return jsonify({"error": "User not found"}), 404
 
         # Build update query dynamically based on provided fields
-        allowed_fields = ["Descr", "RoomID", "RA_ID", "UserID"]
+        allowed_fields = ["Descr", "DormID", "Room_Number", "RA_ID", "UserID"]
         update_fields = [f"{f} = %s" for f in allowed_fields if f in data]
         params = [data[f] for f in allowed_fields if f in data]
 

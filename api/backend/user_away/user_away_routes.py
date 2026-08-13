@@ -106,9 +106,9 @@ def get_user_away(user_id):
 # Who in a room is actually available on a given date - the roommates NOT away.
 # This is the payoff for user story 3.4: the rotation uses it to skip whoever is gone.
 # Defaults to today when on_date is omitted.
-# Example: /away/rooms/3/available?on_date=2026-08-06
-@user_away.route("/rooms/<int:room_id>/available", methods=["GET"])
-def get_available_roommates(room_id):
+# Example: /away/dorms/2/rooms/201/available?on_date=2026-08-06
+@user_away.route("/dorms/<int:dorm_id>/rooms/<int:room_number>/available", methods=["GET"])
+def get_available_roommates(dorm_id, room_number):
     cursor = get_db().cursor(dictionary=True)
     try:
         on_date = request.args.get("on_date", datetime.now().strftime("%Y-%m-%d"))
@@ -116,7 +116,10 @@ def get_available_roommates(room_id):
         if not _valid_date(on_date):
             return jsonify({"error": "on_date must be a date in YYYY-MM-DD format"}), 400
 
-        cursor.execute("SELECT RoomID FROM Rooms WHERE RoomID = %s", (room_id,))
+        cursor.execute(
+            "SELECT 1 FROM Rooms WHERE DormID = %s AND Room_Number = %s",
+            (dorm_id, room_number),
+        )
         if not cursor.fetchone():
             return jsonify({"error": "Room not found"}), 404
 
@@ -124,7 +127,7 @@ def get_available_roommates(room_id):
                     SELECT u.UserID, u.First_Name, u.Last_Name, u.Email,
                            u.TasksCompleted, u.TasksMissed
                     FROM Users u
-                    WHERE u.RoomID = %s
+                    WHERE u.DormID = %s AND u.Room_Number = %s
                       AND NOT EXISTS (
                           SELECT 1 FROM UserAway a
                           WHERE a.UserID = u.UserID
@@ -132,12 +135,16 @@ def get_available_roommates(room_id):
                       )
                     ORDER BY u.UserID
                 """
-        cursor.execute(query, (room_id, on_date))
+        cursor.execute(query, (dorm_id, room_number, on_date))
         available = cursor.fetchall()
 
-        current_app.logger.info(f'{len(available)} roommates available in room {room_id} on {on_date}')
+        current_app.logger.info(
+            f'{len(available)} roommates available in dorm {dorm_id} '
+            f'room {room_number} on {on_date}'
+        )
         return jsonify({
-            "room_id": room_id,
+            "DormID": dorm_id,
+            "Room_Number": room_number,
             "on_date": on_date,
             "available": available,
         }), 200

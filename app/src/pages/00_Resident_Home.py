@@ -32,13 +32,17 @@ if user is None:
 
 st.session_state['first_name'] = user['First_Name']
 
-room_id = user.get('RoomID')
+# A room is identified by its dorm plus its number, so the resident record carries
+# both halves and there is no separate room id to look up.
+dorm_id = user.get('DormID')
+room_number = user.get('Room_Number')
+has_room = dorm_id is not None and room_number is not None
 
-# Room, dorm and RA are all optional context -- a resident with no room assignment
-# should still get a working page, so these stay quiet on failure.
-room = api_get(f"/room/rooms/{room_id}", quiet=True) if room_id else None
-dorm = api_get(f"/dorm/dorms/{room['DormID']}", quiet=True) if room else None
-ra_response = api_get(f"/room/rooms/{room_id}/ra", quiet=True) if room_id else None
+# Dorm and RA are optional context -- a resident with no room assignment should still
+# get a working page, so these stay quiet on failure.
+dorm = api_get(f"/dorm/dorms/{dorm_id}", quiet=True) if has_room else None
+ra_response = (api_get(f"/room/dorms/{dorm_id}/rooms/{room_number}/ra", quiet=True)
+               if has_room else None)
 ra = (ra_response or {}).get('ra')
 
 standing = api_get(f"/room_report/users/{USER_ID}/standing", quiet=True) or {}
@@ -53,8 +57,8 @@ st.caption(f"Logged in on {login_time.strftime('%A, %B %d, %Y at %I:%M %p')}")
 context = []
 if dorm:
     context.append(dorm['Dorm_Name'])
-if room:
-    context.append(f"Room {room['Room_Number']}")
+if has_room:
+    context.append(f"Room {room_number}")
 if ra:
     context.append(f"RA {ra['First_Name']} {ra['Last_Name']}")
 if context:

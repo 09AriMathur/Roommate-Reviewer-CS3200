@@ -45,7 +45,8 @@ try:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Tasks completed", detail.get("TasksCompleted", 0))
     c2.metric("Tasks missed", detail.get("TasksMissed", 0))
-    c3.metric("Room ID", detail.get("RoomID") if detail.get("RoomID") is not None else "—")
+    c3.metric("Room", f"{detail['Room_Number']}"
+              if detail.get("Room_Number") is not None else "—")
     c4.metric("RA ID", detail.get("RA") if detail.get("RA") is not None else "—")
     st.write(f"**Email:** {detail.get('Email', '—')}")
 

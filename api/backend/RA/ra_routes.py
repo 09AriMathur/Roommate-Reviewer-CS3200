@@ -135,7 +135,7 @@ def get_ra_rooms(ra_id):
         query = """
             SELECT DISTINCT r.*
             FROM Rooms r
-            JOIN Users u ON u.RoomID = r.RoomID
+            JOIN Users u ON u.DormID = r.DormID AND u.Room_Number = r.Room_Number
             WHERE u.RA = %s
         """
         cursor.execute(query, (ra_id,))

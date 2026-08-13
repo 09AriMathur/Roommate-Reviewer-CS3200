@@ -67,9 +67,12 @@ if rooms is not None:
             if intervention["Status"] in ONGOING_INTERVENTION_STATUSES:
                 users_with_intervention.add(intervention["UserID"])
 
+    dorm_names = {d["DormID"]: d["Dorm_Name"] for d in (api_get("/dorm/dorms") or [])}
+
     overview_rows = []
     for room in rooms:
-        room_users = api_get(f"/room/rooms/{room['RoomID']}/users") or []
+        room_users = api_get(
+            f"/room/dorms/{room['DormID']}/rooms/{room['Room_Number']}/users") or []
 
         scores = [
             completion_score(u["TasksCompleted"], u["TasksMissed"])
@@ -81,15 +84,14 @@ if rooms is not None:
         has_intervention = any(u["UserID"] in users_with_intervention for u in room_users)
 
         overview_rows.append({
-            "Room ID": room["RoomID"],
+            "Dorm": dorm_names.get(room["DormID"], f"Dorm {room['DormID']}"),
             "Room Number": room["Room_Number"],
-            "Dorm ID": room["DormID"],
             "Ongoing Intervention": "Yes" if has_intervention else "No",
             "Avg Completion Score": format_score(avg_score),
         })
 
     if overview_rows:
-        overview_df = pd.DataFrame(overview_rows).sort_values(["Dorm ID", "Room Number"])
+        overview_df = pd.DataFrame(overview_rows).sort_values(["Dorm", "Room Number"])
         st.dataframe(overview_df, use_container_width=True, hide_index=True)
     else:
         st.info("No rooms found.")
@@ -99,27 +101,43 @@ else:
 st.divider()
 
 # ---------------------------------------------------------------------------
-# Room search: look up a single room by ID for a detailed breakdown of its
-# residents, tasks, and rules.
+# Room search: look up a single room for a detailed breakdown of its residents,
+# tasks, and rules. A room is keyed by its dorm and its number, which is also the
+# only way an RA would describe one -- "South Hall 201", never an internal id.
 # ---------------------------------------------------------------------------
 
 st.write('#### Look Up a Room')
 
+all_dorms = api_get("/dorm/dorms") or []
+
 with st.form("room_search_form"):
-    room_id_input = st.text_input("Room ID", key="room_search_id")
+    dorm_col, number_col = st.columns([2, 1])
+    selected_dorm = dorm_col.selectbox(
+        "Building",
+        options=[d["DormID"] for d in all_dorms],
+        format_func=lambda did: next(
+            (d["Dorm_Name"] for d in all_dorms if d["DormID"] == did), str(did)
+        ),
+        key="room_search_dorm",
+    )
+    room_number_input = number_col.text_input("Room number", key="room_search_number")
     submitted = st.form_submit_button("Search")
 
 if submitted:
-    if not room_id_input.strip().isdigit():
-        st.error("Room ID must be a number.")
+    if not room_number_input.strip().isdigit():
+        st.error("Room number must be a number.")
     else:
-        room_id = int(room_id_input)
-        room = api_get(f"/room/rooms/{room_id}", quiet_404=True)
+        dorm_id = selected_dorm
+        room_number = int(room_number_input)
+        dorm_label = next(
+            (d["Dorm_Name"] for d in all_dorms if d["DormID"] == dorm_id), f"Dorm {dorm_id}"
+        )
+        room = api_get(f"/room/dorms/{dorm_id}/rooms/{room_number}", quiet_404=True)
 
         if room is None:
-            st.error(f"No room found with ID {room_id}.")
+            st.error(f"No room {room_number} in {dorm_label}.")
         else:
-            st.write(f"### Room {room['Room_Number']} (Dorm {room['DormID']})")
+            st.write(f"### {dorm_label}, Room {room['Room_Number']}")
 
             # Shared name lookups, used to resolve who created/is assigned a task
             # and who made a rule, without a separate call per task or rule
@@ -127,7 +145,8 @@ if submitted:
             user_names = {u["UserID"]: f"{u['First_Name']} {u['Last_Name']}" for u in all_users}
             ra_names = {ra["RA_ID"]: f"{ra['First_Name']} {ra['Last_Name']}" for ra in ras}
 
-            room_users = api_get(f"/room/rooms/{room_id}/users") or []
+            room_users = api_get(
+                f"/room/dorms/{dorm_id}/rooms/{room_number}/users") or []
             room_user_ids = {u["UserID"] for u in room_users}
 
             # --- Residents ---------------------------------------------------
@@ -175,7 +194,8 @@ if submitted:
 
             # --- Rules -----------------------------------------------------------
             st.write("##### Rules")
-            room_rules = api_get(f"/room/rooms/{room_id}/rules") or []
+            room_rules = api_get(
+                f"/room/dorms/{dorm_id}/rooms/{room_number}/rules") or []
 
             rule_rows = [{
                 "Rule ID": r["RuleID"],

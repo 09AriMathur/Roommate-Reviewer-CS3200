@@ -38,11 +38,9 @@ today = date.today()
 cutoff = today - timedelta(days=14)
 
 dorm_name = None
-if user.get('RoomID'):
-    room = api_get(f"/room/rooms/{user['RoomID']}", quiet=True)
-    if room:
-        dorm = api_get(f"/dorm/dorms/{room['DormID']}", quiet=True)
-        dorm_name = (dorm or {}).get('Dorm_Name')
+if user.get('DormID') is not None:
+    dorm = api_get(f"/dorm/dorms/{user['DormID']}", quiet=True)
+    dorm_name = (dorm or {}).get('Dorm_Name')
 
 def is_reportable(task):
     """A report says a chore was skipped, so it only makes sense once the deadline

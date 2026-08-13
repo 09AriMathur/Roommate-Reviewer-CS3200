@@ -61,7 +61,8 @@ if rooms is not None:
     room_scores = []  # (avg_score, room) for rooms with at least one scoreable user
 
     for room in rooms:
-        room_users = api_get(f"/room/rooms/{room['RoomID']}/users") or []
+        room_users = api_get(
+            f"/room/dorms/{room['DormID']}/rooms/{room['Room_Number']}/users") or []
 
         scores = []
         for u in room_users:

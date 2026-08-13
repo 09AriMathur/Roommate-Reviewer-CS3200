@@ -279,7 +279,7 @@ def get_user_standing(user_id):
     cursor = get_db().cursor(dictionary=True)
     try:
         query = """
-                    SELECT UserID, First_Name, Last_Name, RoomID,
+                    SELECT UserID, First_Name, Last_Name, DormID, Room_Number,
                            TasksCompleted, TasksMissed,
                            ROUND(TasksCompleted /
                                  NULLIF(TasksCompleted + TasksMissed, 0) * 100, 1) AS completion_pct
@@ -306,19 +306,19 @@ def get_user_standing(user_id):
         cursor.execute(query, (user_id,))
         open_strikes = cursor.fetchone()["total"]
 
-        # A user with no room has no suite to compare against, and joining on a NULL
-        # RoomID would match nothing, so handle that case rather than returning an
+        # A user with no room has no suite to compare against, and matching on a NULL
+        # room key would match nothing, so handle that case rather than returning an
         # empty comparison that looks like a score of zero.
         suite_avg_pct = None
         roommates = []
-        if me["RoomID"] is not None:
+        if me["DormID"] is not None:
             query = """
                         SELECT ROUND(AVG(TasksCompleted /
                                NULLIF(TasksCompleted + TasksMissed, 0)) * 100, 1) AS suite_avg_pct
                         FROM Users
-                        WHERE RoomID = %s
+                        WHERE DormID = %s AND Room_Number = %s
                     """
-            cursor.execute(query, (me["RoomID"],))
+            cursor.execute(query, (me["DormID"], me["Room_Number"]))
             suite_avg_pct = cursor.fetchone()["suite_avg_pct"]
 
             query = """
@@ -327,10 +327,10 @@ def get_user_standing(user_id):
                                ROUND(TasksCompleted /
                                      NULLIF(TasksCompleted + TasksMissed, 0) * 100, 1) AS completion_pct
                         FROM Users
-                        WHERE RoomID = %s
+                        WHERE DormID = %s AND Room_Number = %s
                         ORDER BY completion_pct DESC, UserID
                     """
-            cursor.execute(query, (me["RoomID"],))
+            cursor.execute(query, (me["DormID"], me["Room_Number"]))
             roommates = cursor.fetchall()
             for mate in roommates:
                 mate["completion_pct"] = _as_number(mate["completion_pct"])
@@ -339,7 +339,8 @@ def get_user_standing(user_id):
             "UserID": me["UserID"],
             "First_Name": me["First_Name"],
             "Last_Name": me["Last_Name"],
-            "RoomID": me["RoomID"],
+            "DormID": me["DormID"],
+            "Room_Number": me["Room_Number"],
             "TasksCompleted": me["TasksCompleted"],
             "TasksMissed": me["TasksMissed"],
             "completion_pct": _as_number(me["completion_pct"]),

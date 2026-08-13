@@ -78,14 +78,15 @@ def create_new_user():
             "Last_Name",
             "Email",
             "RA",
-            "RoomID",
+            "DormID",
+            "Room_Number",
         ]
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"Missing required field: {field}"}), 400
             
         query = """
-                    INSERT INTO Users (First_Name, Last_Name, Email, RA, RoomID)
+                    INSERT INTO Users (First_Name, Last_Name, Email, RA, DormID, Room_Number)
                     VALUES (%s, %s, %s, %s, %s)
                 """
         cursor.execute(query, (
@@ -93,7 +94,8 @@ def create_new_user():
             data["Last_Name"],
             data["Email"],
             data["RA"],
-            data["RoomID"],
+            data["DormID"],
+            data["Room_Number"],
         ))
 
         get_db().commit()
@@ -121,7 +123,7 @@ def update_user(user_id):
             return jsonify({"error": "User not found"}), 404
 
         # Build update query dynamically based on provided fields
-        allowed_fields = ["RA", "RoomID", "TasksCompleted", "TasksMissed"]
+        allowed_fields = ["RA", "DormID", "Room_Number", "TasksCompleted", "TasksMissed"]
         update_fields = [f"{f} = %s" for f in allowed_fields if f in data]
         params = [data[f] for f in allowed_fields if f in data]
 
@@ -281,13 +283,22 @@ def get_todo_tasks(user_id):
 def get_roommates(user_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        cursor.execute("SELECT UserID, RoomID FROM Users WHERE UserID = %s", (user_id,))
+        cursor.execute("SELECT UserID, DormID, Room_Number FROM Users WHERE UserID = %s", (user_id,))
         user = cursor.fetchone()
 
         if not user:
             return jsonify({"error": "User not found"}), 404
 
-        cursor.execute("SELECT * FROM Users WHERE RoomID = (SELECT RoomID FROM Users WHERE UserID = %s) AND UserID != %s", (user_id, user_id))
+        cursor.execute(
+            """
+                SELECT * FROM Users
+                WHERE (DormID, Room_Number) = (
+                    SELECT DormID, Room_Number FROM Users WHERE UserID = %s
+                )
+                  AND UserID != %s
+            """,
+            (user_id, user_id),
+        )
         user["roommates"] = cursor.fetchall()
 
         if not user:

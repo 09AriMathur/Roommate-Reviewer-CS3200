@@ -38,7 +38,9 @@ user = api_get(f"/user/users/{USER_ID}")
 if user is None:
     st.stop()
 
-room_id = user.get('RoomID')
+dorm_id = user.get('DormID')
+room_number = user.get('Room_Number')
+has_room = dorm_id is not None and room_number is not None
 today = date.today()
 
 my_away = api_get(f"/away/users/{USER_ID}/away")
@@ -164,13 +166,13 @@ for period in my_away:
 
 st.write("### Who's around?")
 
-if not room_id:
+if not has_room:
     st.caption("You have no room assignment, so there's no suite to check.")
 else:
     check_date = st.date_input("Check a date", value=today, key="coverage_date")
     on_date = check_date.strftime("%Y-%m-%d")
 
-    coverage = api_get(f"/away/rooms/{room_id}/available",
+    coverage = api_get(f"/away/dorms/{dorm_id}/rooms/{room_number}/available",
                        params={"on_date": on_date}, quiet=True)
     available = (coverage or {}).get('available', [])
 

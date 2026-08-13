@@ -63,7 +63,7 @@ with joshua_col:
         # to show immediately rather than the previous persona's.
         st.session_state['first_name'] = 'Joshua'
         logger.info("Logging in as the Resident Persona")
-        st.switch_page('pages/00_User_Start.py')
+        st.switch_page('pages/00_Resident_Home.py')
 
 with frank_col:
     st.markdown('### Frank Osei')
@@ -81,7 +81,7 @@ with frank_col:
         st.session_state['user_id'] = 4
         st.session_state['first_name'] = 'Frank'
         logger.info("Logging in as the Ronny RuleBreaker Persona")
-        st.switch_page('pages/10_Student_Home.py')
+        st.switch_page('pages/00_Resident_Home.py')
 
 with carol_col:
     st.markdown('### Carol Diaz')

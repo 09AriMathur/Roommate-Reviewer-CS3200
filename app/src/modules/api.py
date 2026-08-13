@@ -1,7 +1,7 @@
 """Small wrapper around the Flask API for the Streamlit pages.
 
 The RA pages each define their own copy of these helpers. This module exists so the
-student pages, which make considerably more calls, can share one implementation.
+resident pages, which make considerably more calls, can share one implementation.
 
 api_write returns the status code alongside the body because some routes use a status
 to mean something the UI has to explain -- DELETE /request/requests/<id> answers 409

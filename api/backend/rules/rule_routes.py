@@ -83,7 +83,7 @@ def create_rule():
                 return jsonify({"error": "Room not found"}), 404
 
         if data.get("RA_ID") is not None:
-            cursor.execute("SELECT UserID FROM RAs WHERE UserID = %s", (data["RA_ID"],))
+            cursor.execute("SELECT RA_ID FROM RAs WHERE RA_ID = %s", (data["RA_ID"],))
             if not cursor.fetchone():
                 return jsonify({"error": "RA not found"}), 404
 
@@ -135,7 +135,7 @@ def update_rule(rule_id):
                 return jsonify({"error": "Room not found"}), 404
 
         if data.get("RA_ID") is not None:
-            cursor.execute("SELECT UserID FROM RAs WHERE UserID = %s", (data["RA_ID"],))
+            cursor.execute("SELECT RA_ID FROM RAs WHERE RA_ID = %s", (data["RA_ID"],))
             if not cursor.fetchone():
                 return jsonify({"error": "RA not found"}), 404
 

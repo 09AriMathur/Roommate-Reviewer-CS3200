@@ -362,7 +362,17 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 -- work with -- a strike is an open report about a task assigned to you.
 (5, 'Take out trash',             '2026-07-18 09:00:00', '2026-07-20', 'missed',      3, 4, NULL),
 (6, 'Wipe down counters',         '2026-06-13 18:30:00', '2026-06-15', 'missed',      1, 4, NULL),
-(7, 'Clean the microwave',        '2026-07-02 12:00:00', '2026-07-04', 'missed',      3, 4, NULL);
+(7, 'Clean the microwave',        '2026-07-02 12:00:00', '2026-07-04', 'missed',      3, 4, NULL),
+-- Erin Walsh (UserID 3) shares RoomID 3 with Frank and carries TasksCompleted = 1 /
+-- TasksMissed = 2, but had no tasks at all, so those counters matched nothing either.
+-- The first three make her 33.3% completion rate add up. The fourth is deliberately
+-- overdue and still open: a resident may only report a *roommate's* chore, and only
+-- once its due date has passed, so without it Frank has nothing he is allowed to
+-- report and the Chore Reports page cannot be demonstrated from his account.
+(222, 'Scrub the shower',         '2026-06-20 10:00:00', '2026-06-24', 'done',        3, 3, NULL),
+(223, 'Take out compost',         '2026-07-08 08:30:00', '2026-07-11', 'missed',      4, 3, NULL),
+(224, 'Sweep the entryway',       '2026-07-26 16:00:00', '2026-07-29', 'missed',      3, 3, NULL),
+(225, 'Clean the bathroom mirror','2026-08-05 09:15:00', '2026-08-09', 'todo',        4, 3, NULL);
 
 -- Mock Tasks generated with Mockaroo (1-3 per user for UserID 6-120; UserID 1-5 keep the hand-authored story tasks above)
 INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_UserID, Assigned_UserID, Request_ID) VALUES

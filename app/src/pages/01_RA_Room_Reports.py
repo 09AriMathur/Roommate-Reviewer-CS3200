@@ -56,6 +56,8 @@ st.write('#### Rooms Overview')
 
 rooms = api_get("/room/rooms")
 ras = api_get("/ra/ras") or []
+dorms = api_get("/dorm/dorms") or []
+dorm_names = {d["DormID"]: d["Dorm_Name"] for d in dorms}
 
 if rooms is not None:
     # RA_Intervention is only exposed per-RA, so gather every user currently
@@ -81,15 +83,14 @@ if rooms is not None:
         has_intervention = any(u["UserID"] in users_with_intervention for u in room_users)
 
         overview_rows.append({
-            "Room ID": room["RoomID"],
             "Room Number": room["Room_Number"],
-            "Dorm ID": room["DormID"],
+            "Dorm Name": dorm_names.get(room["DormID"], "Unknown"),
             "Ongoing Intervention": "Yes" if has_intervention else "No",
             "Avg Completion Score": format_score(avg_score),
         })
 
     if overview_rows:
-        overview_df = pd.DataFrame(overview_rows).sort_values(["Dorm ID", "Room Number"])
+        overview_df = pd.DataFrame(overview_rows).sort_values(["Dorm Name", "Room Number"])
         st.dataframe(overview_df, use_container_width=True, hide_index=True)
     else:
         st.info("No rooms found.")
@@ -99,27 +100,36 @@ else:
 st.divider()
 
 # ---------------------------------------------------------------------------
-# Room search: look up a single room by ID for a detailed breakdown of its
-# residents, tasks, and rules.
+# Room search: look up a single room by dorm + room number for a detailed
+# breakdown of its residents, tasks, and rules.
 # ---------------------------------------------------------------------------
 
 st.write('#### Look Up a Room')
 
+dorm_name_to_id = {d["Dorm_Name"]: d["DormID"] for d in dorms}
+
 with st.form("room_search_form"):
-    room_id_input = st.text_input("Room ID", key="room_search_id")
+    search_dorm_name = st.selectbox("Dorm", list(dorm_name_to_id.keys()))
+    room_number_input = st.text_input("Room Number", key="room_search_number")
     submitted = st.form_submit_button("Search")
 
 if submitted:
-    if not room_id_input.strip().isdigit():
-        st.error("Room ID must be a number.")
+    if not room_number_input.strip().isdigit():
+        st.error("Room Number must be a number.")
     else:
-        room_id = int(room_id_input)
-        room = api_get(f"/room/rooms/{room_id}", quiet_404=True)
+        room_number = int(room_number_input)
+        search_dorm_id = dorm_name_to_id[search_dorm_name]
+        room = next(
+            (r for r in (rooms or [])
+             if r["DormID"] == search_dorm_id and r["Room_Number"] == room_number),
+            None,
+        )
 
         if room is None:
-            st.error(f"No room found with ID {room_id}.")
+            st.error(f"No room numbered {room_number} found in {search_dorm_name}.")
         else:
-            st.write(f"### Room {room['Room_Number']} (Dorm {room['DormID']})")
+            room_id = room["RoomID"]
+            st.write(f"### Room {room['Room_Number']} ({dorm_names.get(room['DormID'], 'Unknown')})")
 
             # Shared name lookups, used to resolve who created/is assigned a task
             # and who made a rule, without a separate call per task or rule

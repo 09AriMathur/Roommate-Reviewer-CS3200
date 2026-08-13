@@ -7,8 +7,7 @@ import streamlit as st
 
 # How each role is described under the user's name in the sidebar.
 ROLE_LABELS = {
-    "user": "Resident",
-    "student": "Resident",
+    "resident": "Resident",
     "ra": "Residence Advisor",
     "admin": "System Administrator",
 }
@@ -24,7 +23,7 @@ def about_page_nav():
     st.sidebar.page_link("pages/30_About.py", label="About", icon="ℹ️")
 
 
-# ---- Roles: user & student (Joshua & Frank share the same resident pages) ----
+# ---- Role: resident (Joshua and Frank share the same pages) ----
 
 def resident_home_nav():
     st.sidebar.page_link("pages/00_Resident_Home.py", label="Home", icon="🏠")
@@ -109,9 +108,9 @@ def admin_dorms_nav():
 def current_user_nav():
     """Show who is signed in, under the logo.
 
-    Not every role has a first name in the session straight after login -- the
-    'user' role only picks one up once its landing page fetches the record --
-    so fall back to the role on its own rather than printing nothing.
+    Not every role has a first name in the session straight after login -- a
+    resident only picks one up once their landing page fetches the record -- so
+    fall back to the role on its own rather than printing nothing.
     """
     name = st.session_state.get("first_name")
     label = ROLE_LABELS.get(st.session_state.get("role"), "Signed in")
@@ -148,7 +147,7 @@ def SideBarLinks(show_home=False):
 
     if st.session_state["authenticated"]:
 
-        if st.session_state["role"] in ("user", "student"):
+        if st.session_state["role"] == "resident":
             resident_home_nav()
             my_chores_nav()
             chore_reports_nav()
@@ -178,6 +177,25 @@ def SideBarLinks(show_home=False):
 
     if st.session_state["authenticated"]:
         if st.sidebar.button("Log out", use_container_width=True):
-            del st.session_state["role"]
-            del st.session_state["authenticated"]
+            log_out()
             st.switch_page("Home.py")
+
+
+# Everything a session picks up while someone is signed in. Logging out used to clear
+# only the role, so the next persona inherited the previous one's id, name and login
+# timestamp -- Frank's page could greet him under Joshua's sign-in moment, and any page
+# that read user_id before fetching its own record read the wrong person entirely.
+SESSION_KEYS = (
+    "role",
+    "authenticated",
+    "user_id",
+    "first_name",
+    "login_time",
+    "report_draft_time",
+    "prefill_request",
+)
+
+
+def log_out():
+    for key in SESSION_KEYS:
+        st.session_state.pop(key, None)

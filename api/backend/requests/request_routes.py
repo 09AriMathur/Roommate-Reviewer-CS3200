@@ -7,17 +7,17 @@ from mysql.connector import Error
 # Create a Blueprint for Request routes
 requests = Blueprint("request", __name__)
 
-# Request_Type is a free VARCHAR(50) in the schema rather than an ENUM, so the
-# accepted values are enforced here instead. This is the union of two vocabularies:
-# the four Persona 3 (Ronny RuleBreaker) actions, and the three values already
-# present in the seed data. Normalising these to one set is a team decision.
+# Request_Type is a free VARCHAR(50) in the schema rather than an ENUM, so the accepted
+# values are enforced here instead. 'chore_swap' used to sit alongside 'swap' as a second
+# name for the same thing, which meant every page that acted on a swap had to test for
+# both; the seed rows now say 'swap'. maintenance and room_change are older vocabulary
+# with no form behind them, kept so existing rows still validate.
 VALID_REQUEST_TYPES = {
     "extension",
     "dispute",
     "expunction",
     "swap",
     "maintenance",
-    "chore_swap",
     "room_change",
 }
 

@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request, current_app
 from backend.db_connection import get_db
+from backend.tasks.task_routes import _apply_counter_change
 from mysql.connector import Error
 
 # Create a Blueprint for Room Report routes
@@ -12,13 +13,57 @@ def _as_number(value):
     percentages are coerced before they go out. NULL stays None."""
     return None if value is None else float(value)
 
-# Get all room reports
+# Get room reports, optionally narrowed to one RA's rooms or one status.
+# Example: /room_report/room_reports?ra_id=1&status=open
+#
+# A report has no room column. It points at a chore, and the chore points at whoever is
+# assigned it, and that resident lives in a room with an RA -- so an RA's caseload is
+# three joins away. Every report also carries the chore and both names, because a report
+# id on its own tells an RA nothing about what they are ruling on.
 @room_reports.route("/room_reports", methods=["GET"])
 def get_all_room_reports():
     cursor = get_db().cursor(dictionary=True)
     try:
-        query = "SELECT * FROM Room_Reports WHERE 1=1"
-        cursor.execute(query)
+        ra_id = request.args.get("ra_id")
+        status = request.args.get("status")
+
+        if status and status not in {"open", "reviewed", "closed"}:
+            return jsonify({"error": "Invalid status type"}), 400
+
+        query = """
+            SELECT rp.*,
+                   t.Task_Name, t.due_date, t.status AS task_status,
+                   t.Assigned_UserID,
+                   accused.First_Name AS accused_first, accused.Last_Name AS accused_last,
+                   filer.First_Name  AS filer_first,  filer.Last_Name  AS filer_last,
+                   COALESCE(accused.DormID, filer.DormID)           AS DormID,
+                   COALESCE(accused.Room_Number, filer.Room_Number) AS Room_Number
+            FROM Room_Reports rp
+            LEFT JOIN Tasks t       ON t.Task_ID = rp.TaskID
+            LEFT JOIN Users accused ON accused.UserID = t.Assigned_UserID
+            JOIN      Users filer   ON filer.UserID = rp.UserID
+            WHERE 1=1
+        """
+        params = []
+
+        # Reports about a chore are placed by the accused's room; a report with no chore
+        # attached falls back to the filer's, which is the same room in practice.
+        if ra_id:
+            query += """
+                AND EXISTS (
+                    SELECT 1 FROM Rooms rm
+                    WHERE rm.RA = %s
+                      AND rm.DormID     = COALESCE(accused.DormID, filer.DormID)
+                      AND rm.Room_Number = COALESCE(accused.Room_Number, filer.Room_Number)
+                )
+            """
+            params.append(ra_id)
+        if status:
+            query += " AND rp.Status = %s"
+            params.append(status)
+
+        query += " ORDER BY rp.Time_Reported DESC"
+        cursor.execute(query, params)
 
         report_list = cursor.fetchall()
 
@@ -153,14 +198,24 @@ def create_new_room_report():
         cursor.close()
 
 
-# Update an existing room report
+# Update an existing room report -- the RA acting on it.
+#
+# Passing uphold=true says the RA agrees the chore was skipped, and that is the one
+# thing in the app that marks a chore missed. Nothing else ever wrote that status: a
+# resident can only mark a chore done, so an overdue chore stayed 'todo' for ever and
+# Users.TasksMissed could never move. Doing it here rather than as a second call from
+# the page keeps the report and the chore from disagreeing about what was decided.
 @room_reports.route("/room_reports/<report_id>", methods=["PUT"])
 def update_room_report(report_id):
-    cursor = get_db().cursor(dictionary=True)
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
     try:
         data = request.get_json()
 
-        cursor.execute("SELECT ReportID FROM Room_Reports WHERE ReportID = %s", (report_id,))
+        cursor.execute(
+            "SELECT ReportID, Status, TaskID FROM Room_Reports WHERE ReportID = %s",
+            (report_id,),
+        )
         report = cursor.fetchone()
         if not report:
             return jsonify({"error": "Room Report not found"}), 404
@@ -168,6 +223,13 @@ def update_room_report(report_id):
         VALID_STATUSES = {"open", "reviewed", "closed"}
         if "Status" in data and data["Status"] not in VALID_STATUSES:
             return jsonify({"error": "Invalid status type"}), 400
+
+        uphold = bool(data.get("uphold", False))
+        if uphold and data.get("Status") == "open":
+            return jsonify({
+                "error": "A report still open has not been ruled on, so there is "
+                         "nothing to uphold"
+            }), 400
 
         # Build update query dynamically based on provided fields
         allowed_fields = ["Status", "RequestID"]
@@ -191,10 +253,57 @@ def update_room_report(report_id):
         params.append(report_id)
         query = f"UPDATE Room_Reports SET {', '.join(update_fields)} WHERE ReportID = %s"
         cursor.execute(query, params)
-        get_db().commit()
 
-        return jsonify({"message": "Room Report updated successfully"}), 200
+        chore_marked_missed = False
+        if uphold and report["TaskID"] is not None:
+            cursor.execute(
+                "SELECT Task_ID, status, Assigned_UserID FROM Tasks WHERE Task_ID = %s",
+                (report["TaskID"],),
+            )
+            task = cursor.fetchone()
+
+            # A chore that got done after the report was filed is not a miss, whatever
+            # the report says -- upholding it would take credit off the resident who
+            # finished it. Only a chore still outstanding is marked down.
+            if task and task["status"] in ("todo", "in_progress"):
+                cursor.execute(
+                    "UPDATE Tasks SET status = 'missed' WHERE Task_ID = %s",
+                    (task["Task_ID"],),
+                )
+                # Same counter bookkeeping a status change through the tasks route
+                # would do, so completion rates move with the ruling.
+                _apply_counter_change(cursor, task["status"], task["Assigned_UserID"],
+                                      "missed", task["Assigned_UserID"])
+                chore_marked_missed = True
+
+        # RAs.Settled_Reps is on the admin's RA roster as though it were live, and until
+        # now nothing incremented it -- it only ever read back the seed value. Ruling on
+        # a report is the thing it counts, so it moves on the crossing out of 'open' and
+        # moves back if the report is reopened.
+        ra_id = data.get("ra_id")
+        new_status = data.get("Status")
+        if ra_id and new_status and new_status != report["Status"]:
+            if report["Status"] == "open" and new_status != "open":
+                cursor.execute(
+                    "UPDATE RAs SET Settled_Reps = Settled_Reps + 1 WHERE RA_ID = %s",
+                    (ra_id,),
+                )
+            elif report["Status"] != "open" and new_status == "open":
+                cursor.execute(
+                    "UPDATE RAs SET Settled_Reps = GREATEST(Settled_Reps - 1, 0) "
+                    "WHERE RA_ID = %s",
+                    (ra_id,),
+                )
+
+        db.commit()
+
+        return jsonify({
+            "message": "Room Report updated successfully",
+            "chore_marked_missed": chore_marked_missed,
+        }), 200
     except Error as e:
+        db.rollback()
+        current_app.logger.error(f'Database error in update_room_report: {e}')
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()

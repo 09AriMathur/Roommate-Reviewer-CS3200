@@ -9,6 +9,13 @@ st.set_page_config(layout='wide')
 # Show appropriate sidebar links for the role of the currently logged in user
 SideBarLinks()
 
+# The sidebar only hides links; it does not stop another role from reaching
+# this URL. Without this, arriving without a session raised a KeyError on
+# first_name rather than saying the page was off limits.
+if st.session_state.get('role') != 'ra':
+    st.error('You do not have access to this page.')
+    st.stop()
+
 st.title(f"Hi, {st.session_state['first_name']}.")
 st.caption('Residence Advisor')
 

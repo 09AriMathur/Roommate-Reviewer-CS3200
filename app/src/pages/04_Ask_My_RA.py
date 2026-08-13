@@ -1,12 +1,13 @@
 import streamlit as st
 from modules.api import api_get, api_write
+from modules.labels import INTERVENTION_STATUS_BADGES
 from modules.nav import SideBarLinks
 
 st.set_page_config(layout='wide')
 
 SideBarLinks()
 
-if st.session_state.get('role') not in ('user', 'student'):
+if st.session_state.get('role') != 'resident':
     st.error('You do not have access to this page.')
     st.stop()
 
@@ -18,23 +19,21 @@ if user is None:
 
 assigned_ra = api_get(f"/ra/ras/{user['RA']}", quiet=True) if user.get('RA') else None
 
-my_interventions = []
-if user.get('RA'):
-    interventions = api_get(f"/ra/ras/{user['RA']}/interventions", quiet=True) or []
-    my_interventions = [i for i in interventions if i['UserID'] == USER_ID]
-
-STATUS_BADGES = {
-    'pending': ('Pending', 'orange'),
-    'active': ('Active', 'blue'),
-    'closed': ('Closed', 'green'),
-}
+# Asked for by resident, not by RA. Fetching the RA's whole caseload and filtering it
+# in the browser meant this page received the case notes of every other resident that
+# RA manages.
+my_interventions = api_get("/intervention/interventions",
+                           params={"user_id": USER_ID}, quiet=True) or []
 
 
 def render_intervention_row(intervention):
     with st.container(border=True):
-        label, color = STATUS_BADGES.get(intervention['Status'], (intervention['Status'], 'gray'))
+        label, color = INTERVENTION_STATUS_BADGES.get(
+            intervention['Status'], (intervention['Status'].title(), 'gray'))
         st.badge(label, color=color)
         st.caption(intervention.get('Description') or "No description provided.")
+        if intervention['Status'] == 'closed':
+            st.caption(":gray[Your RA has closed this one out.]")
 
 
 st.title("Ask My RA")
@@ -72,7 +71,7 @@ with new_request_col:
                 if not description.strip():
                     st.error("Please provide a short description of the issue.")
                 else:
-                    status, _ = api_write("POST", "/ra/ras/interventions", {
+                    status, _ = api_write("POST", "/intervention/interventions", {
                         "UserID": USER_ID,
                         "Description": description.strip(),
                     })

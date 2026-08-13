@@ -4,38 +4,33 @@ from email.utils import parsedate_to_datetime
 
 import streamlit as st
 from modules.api import api_get, api_write
+from modules.labels import REQUEST_IN_FLIGHT, REQUEST_STATUS_COLORS
 from modules.nav import SideBarLinks
 
 st.set_page_config(layout='wide')
 
 SideBarLinks()
 
-if st.session_state.get('role') not in ('user', 'student'):
+if st.session_state.get('role') != 'resident':
     st.error('You do not have access to this page.')
     st.stop()
 
 USER_ID = st.session_state['user_id']
 
-# The API accepts seven request types, but three of them (maintenance, chore_swap,
-# room_change) are older vocabulary that still appears in existing rows. Only the four
-# that belong to this persona are offered when filing; the lists below render anything.
+# The API accepts several request types, but maintenance and room_change are older
+# vocabulary that still appears in existing rows. Only the four that belong to this
+# persona are offered when filing; the lists below render anything.
 FILEABLE_TYPES = ["extension", "dispute", "expunction", "swap"]
 
-# Which types point at a specific chore. A dispute challenges a report and an expunction
-# challenges a strike, so neither carries a Task_ID.
-TYPES_NEEDING_TASK = {"extension", "swap"}
+# Which types point at a specific chore. A dispute contests a chore having been marked
+# missed, so it is about that chore and carries its Task_ID -- which is what My Chores
+# has always sent. An expunction challenges a report rather than a chore, so it does not.
+TYPES_NEEDING_TASK = {"extension", "swap", "dispute"}
 
 # Accepting one of these means taking the chore on, not just approving a request.
-# 'chore_swap' is the older spelling of the same thing and is still in the seed data.
-SWAP_TYPES = {"swap", "chore_swap"}
-
-STATUS_COLORS = {
-    "open": "blue",
-    "in_progress": "orange",
-    "resolved": "green",
-    "rejected": "red",
-}
-
+# 'chore_swap' was a second spelling of 'swap' in the seed data, which every page
+# handling a swap had to know about; the rows now say 'swap' like the form does.
+SWAP_TYPES = {"swap"}
 
 def to_date(value):
     """Flask serializes DATE/DATETIME columns as RFC 2822."""
@@ -155,7 +150,13 @@ mine_by_status = Counter(r['Status'] for r in my_requests)
 with st.container(border=True):
     cols = st.columns(4)
     cols[0].metric("Requests I've filed", len(my_requests))
-    cols[1].metric("Mine still open", mine_by_status.get('open', 0))
+    # 'in_progress' had no tile, so the other three never added up to the first one --
+    # a request someone had picked up simply stopped being counted anywhere.
+    cols[1].metric(
+        "Mine still waiting",
+        sum(mine_by_status.get(s, 0) for s in REQUEST_IN_FLIGHT),
+        help="Filed and not yet decided, whether or not someone has picked it up.",
+    )
     cols[2].metric("Mine resolved", mine_by_status.get('resolved', 0))
     cols[3].metric("Mine rejected", mine_by_status.get('rejected', 0))
 
@@ -200,7 +201,7 @@ for req in visible:
         task = detail.get('task')
 
         st.badge(pretty(req['Status']),
-                 color=STATUS_COLORS.get(req['Status'], "gray"))
+                 color=REQUEST_STATUS_COLORS.get(req['Status'], "gray"))
         st.write(req.get('Reason') or "_No reason given_")
 
         if task:
@@ -278,8 +279,6 @@ else:
         undecided = req['Status'] == 'open'
         # A swap hands over a specific chore, so taking it on means reassigning that
         # chore. Without a Task_ID there is nothing to move and it is a plain approval.
-        # Both spellings count: VALID_REQUEST_TYPES carries the legacy 'chore_swap'
-        # alongside 'swap', and seeded rows use both for the same thing.
         is_swap = (req['Request_Type'] in SWAP_TYPES
                    and req.get('Task_ID') is not None)
 
@@ -290,7 +289,7 @@ else:
                 f"{pretty(req['Request_Type'])} — {req.get('Reason') or 'No reason given'}"
             )
             status_col.badge(pretty(req['Status']),
-                             color=STATUS_COLORS.get(req['Status'], "gray"))
+                             color=REQUEST_STATUS_COLORS.get(req['Status'], "gray"))
 
             if not undecided:
                 continue

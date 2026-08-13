@@ -57,7 +57,7 @@ with joshua_col:
                  type='primary',
                  use_container_width=True):
         st.session_state['authenticated'] = True
-        st.session_state['role'] = 'user'
+        st.session_state['role'] = 'resident'
         st.session_state['user_id'] = 43
         # Set here as well as on the landing page, so the sidebar has a name
         # to show immediately rather than the previous persona's.
@@ -75,7 +75,7 @@ with frank_col:
                  type='primary',
                  use_container_width=True):
         st.session_state['authenticated'] = True
-        st.session_state['role'] = 'student'
+        st.session_state['role'] = 'resident'
         # Frank Osei (Users.UserID 4) is the seeded stand-in for the Ronny RuleBreaker
         # persona, and the deliberate opposite of Joshua: 0 tasks completed, 10 missed,
         # four open strikes -- one past the limit of three, so his landing page opens on

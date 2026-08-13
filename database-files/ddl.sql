@@ -178,7 +178,9 @@ CREATE TABLE Rules (
 --   Users.UserID 4   Frank Osei    0 done / 10 missed, 4 open strikes past a
 --                                  limit of 3, 5 live requests and 4 already refused,
 --                                  away for the week of every single miss
---   RAs.RA_ID 1      Carol Diaz    RA for Stetson East 101/103/108, Frank's open case
+--   RAs.RA_ID 1      Carol Diaz    RA for Stetson East 101/103/108 and Speare 406, so
+--                                  she is the RA on both resident personas: Frank's
+--                                  open case and the reports Joshua files
 --   System_Admin.AdminID 1  Sam Reynolds
 -- ===========================================================================
 
@@ -269,7 +271,7 @@ INSERT INTO Rooms (DormID, Room_Number, RA) VALUES
 (3, 208, 8),
 (3, 214, 8),
 (3, 304, 9),
-(3, 406, 9),
+(3, 406, 1),
 (4, 101, 10),
 (4, 117, 10),
 (4, 210, 10),
@@ -370,9 +372,9 @@ INSERT INTO Users (UserID, First_Name, Last_Name, Email, RA, DormID, Room_Number
 
 INSERT INTO Users (UserID, First_Name, Last_Name, Email, RA, DormID, Room_Number, TasksCompleted, TasksMissed) VALUES
 (41, 'Samara', 'Bailey', 'samara.bailey@northeastern.edu', 9, 3, 304, 1, 1),
-(42, 'Aubrey', 'Martin', 'aubrey.martin@northeastern.edu', 9, 3, 406, 3, 4),
-(43, 'Joshua', 'Patel', 'joshua.patel@northeastern.edu', 9, 3, 406, 12, 0),
-(44, 'Benjamin', 'Garcia', 'benjamin.garcia@northeastern.edu', 9, 3, 406, 3, 3),
+(42, 'Aubrey', 'Martin', 'aubrey.martin@northeastern.edu', 1, 3, 406, 3, 4),
+(43, 'Joshua', 'Patel', 'joshua.patel@northeastern.edu', 1, 3, 406, 12, 0),
+(44, 'Benjamin', 'Garcia', 'benjamin.garcia@northeastern.edu', 1, 3, 406, 3, 3),
 (45, 'Mia', 'Kowalski', 'mia.kowalski@northeastern.edu', 10, 4, 101, 1, 0),
 (46, 'Penelope', 'Edwards', 'penelope.edwards@northeastern.edu', 10, 4, 101, 2, 0),
 (47, 'Malik', 'Clark', 'malik.clark@northeastern.edu', 10, 4, 117, 1, 2),
@@ -1016,7 +1018,7 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 -- to a person only through Requested_By_UserID. Anything still open and asking
 -- about a chore points at a chore its requester has in play, because asking for
 -- more time on something already finished is not a request the app will take.
--- The maintenance / room_change / chore_swap rows at the end are from the start of
+-- The maintenance / room_change rows at the end are from the start of
 -- the term, before chores moved into the app: the pages still render that
 -- vocabulary, nothing files it any more.
 INSERT INTO Requests (Request_ID, Status, Reason, Request_Type, Created_At, Proposed_Due_Date, Task_ID, Requested_By_UserID) VALUES
@@ -1156,9 +1158,9 @@ INSERT INTO Requests (Request_ID, Status, Reason, Request_Type, Created_At, Prop
 (128, 'rejected', 'Requesting reassignment closer to campus for an early co-op.', 'room_change', '2026-06-28 19:30:00', '2026-07-19', NULL, 23),
 (129, 'resolved', 'Roommate conflict; asking to be moved.', 'room_change', '2026-06-23 13:15:00', '2026-07-01', NULL, 5),
 (130, 'rejected', 'Asked to be reassigned to a single room.', 'room_change', '2026-06-23 12:55:00', '2026-07-01', NULL, 130),
-(131, 'resolved', 'Away for a family event, need someone to cover my chore.', 'chore_swap', '2026-06-22 16:30:00', NULL, 289, 78),
-(132, 'rejected', 'Willing to trade chores with a roommate this cycle.', 'chore_swap', '2026-06-26 13:00:00', NULL, 5, 22),
-(133, 'resolved', 'Covering a shift, looking for a swap.', 'chore_swap', '2026-06-27 17:35:00', NULL, NULL, 34);
+(131, 'resolved', 'Away for a family event, need someone to cover my chore.', 'swap', '2026-06-22 16:30:00', NULL, 289, 78),
+(132, 'rejected', 'Willing to trade chores with a roommate this cycle.', 'swap', '2026-06-26 13:00:00', NULL, 5, 22),
+(133, 'resolved', 'Covering a shift, looking for a swap.', 'swap', '2026-06-27 17:35:00', NULL, NULL, 34);
 
 -- A resolved extension is a deadline that actually moved, so the chore carries the
 -- request that moved it.
@@ -1182,11 +1184,11 @@ INSERT INTO RA_Intervention (RequestID, Description, Status, UserID, RA) VALUES
 (2, 'Escalated after the fourth strike -- reviewing whether he stays in a shared room.', 'pending', 4, 1),
 (3, 'First conversation in July about the trash rotation. No change followed.', 'closed', 4, 1),
 (4, 'Sat down with 103 to rewrite the chart after two roommates filed on the same person.', 'active', 3, 1),
-(5, 'Checked in with the room lead; the rotation is running itself, no action needed.', 'closed', 43, 9),
-(6, 'Discussed what happens if the strike count reaches three.', 'active', 42, 9),
+(5, 'Checked in with the room lead; the rotation is running itself, no action needed.', 'closed', 43, 1),
+(6, 'Discussed what happens if the strike count reaches three.', 'active', 42, 1),
 (7, 'Closed out an old report after the chore was finally done.', 'closed', 133, 28),
 (8, 'Followed up after a roommate filed back-to-back reports.', 'closed', 69, 14),
-(9, 'Sat down with the room to rewrite the chore chart.', 'closed', 44, 9),
+(9, 'Sat down with the room to rewrite the chore chart.', 'closed', 44, 1),
 (10, 'Mediated a noise complaint between roommates.', 'closed', 140, 30),
 (11, 'Talked through the chore rotation after two open reports.', 'closed', 47, 10),
 (12, 'Followed up after a roommate filed back-to-back reports.', 'closed', 38, 8),
@@ -1444,7 +1446,7 @@ INSERT INTO Logs (Log_Id, UserId, `Timestamp`, `Action`, ReviewerID) VALUES
 (16, 86, '2026-06-25 21:20:00', 'Marked chore #19 ''Wipe down bathroom mirror'' as done', 3),
 (17, 17, '2026-06-26 09:55:00', 'Submitted a maintenance request (#120)', 1),
 (18, 18, '2026-06-26 11:20:00', 'Marked chore #4 ''Mop the kitchen floor'' as done', 2),
-(19, 22, '2026-06-26 13:00:00', 'Submitted a chore_swap request (#132)', 6),
+(19, 22, '2026-06-26 13:00:00', 'Submitted a swap request (#132)', 6),
 (20, 77, '2026-06-26 19:15:00', 'Filed report #40 on chore #16', 2),
 (21, 125, '2026-06-26 20:25:00', 'Marked chore #29 ''Vacuum the common room'' as done', NULL),
 (22, 116, '2026-06-26 21:20:00', 'Marked chore #26 ''Restock paper towels'' as done', NULL),
@@ -1707,7 +1709,7 @@ INSERT INTO Rules (RuleID, UserID, Descr, RA_ID, DormID, Room_Number) VALUES
 (26, NULL, 'Bathroom is cleaned on a rotating weekly schedule, posted on the door.', 8, 3, 214),
 (27, NULL, 'If you swap a chore, log the swap in the app so the rotation stays honest.', 9, 3, 304),
 (28, 44, 'Dishes go in the dishwasher the same day they are used.', NULL, 3, 406),
-(29, NULL, 'Shoes off past the entryway -- the floor gets mopped once a week, not twice.', 9, 3, 406),
+(29, NULL, 'Shoes off past the entryway -- the floor gets mopped once a week, not twice.', 1, 3, 406),
 (30, 53, 'Bikes are stored in the bike room, not in the hallway or stairwell.', NULL, 4, 306),
 (31, NULL, 'Noise complaints go to the RA rather than being handled resident-to-resident.', 12, 5, 114),
 (32, NULL, 'Quiet hours begin at 10:00 PM on weeknights and midnight on weekends.', 12, 5, 114),

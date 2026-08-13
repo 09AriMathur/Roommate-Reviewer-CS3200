@@ -5,14 +5,14 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 from modules.api import api_get, api_write
-from modules.labels import chore_state, is_reportable
+from modules.labels import REPORT_STATUS_BADGES, chore_state, is_reportable
 from modules.nav import SideBarLinks
 
 st.set_page_config(layout='wide')
 
 SideBarLinks()
 
-if st.session_state.get('role') not in ('user', 'student'):
+if st.session_state.get('role') != 'resident':
     st.error('You do not have access to this page.')
     st.stop()
 
@@ -97,13 +97,6 @@ def format_task_option(task):
 def format_report_time(raw):
     reported_at = parsedate_to_datetime(raw)
     return reported_at.strftime('%b %d, %I:%M %p')
-
-
-REPORT_STATUS_BADGES = {
-    'open': ('Open', 'red'),
-    'reviewed': ('Reviewed', 'blue'),
-    'closed': ('Closed', 'green'),
-}
 
 
 def render_report_row(report):

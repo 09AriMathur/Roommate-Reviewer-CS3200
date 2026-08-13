@@ -11,6 +11,13 @@ st.set_page_config(layout='wide')
 # Show appropriate sidebar links for the role of the currently logged in user
 SideBarLinks()
 
+# The sidebar only hides links; it does not stop another role from reaching
+# this URL. Without this, arriving without a session raised a KeyError on
+# first_name rather than saying the page was off limits.
+if st.session_state.get('role') != 'ra':
+    st.error('You do not have access to this page.')
+    st.stop()
+
 st.title('Rules Manager')
 st.write(f"### Hi, {st.session_state['first_name']}.")
 
@@ -51,7 +58,9 @@ if not ra_id:
     st.stop()
 
 ra = api_get(f"/ra/ras/{ra_id}")
-rooms = api_get("/room/rooms") or []
+# The room picker used to offer all 68 rooms in the building, and the API accepted any
+# of them, so a rule could be written into a room this RA has nothing to do with.
+rooms = api_get(f"/ra/ras/{ra_id}/rooms") or []
 dorms = api_get("/dorm/dorms") or []
 
 if ra is None:

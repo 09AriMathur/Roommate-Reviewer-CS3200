@@ -3,7 +3,8 @@ from email.utils import parsedate_to_datetime
 
 import streamlit as st
 from modules.api import api_get
-from modules.labels import chore_state, is_reportable
+from modules.labels import (REQUEST_IN_FLIGHT, bucket_chores, by_due_date, chore_state,
+                            is_reportable, to_due_date)
 from modules.nav import SideBarLinks
 
 st.set_page_config(layout='wide')
@@ -11,7 +12,7 @@ st.set_page_config(layout='wide')
 SideBarLinks()
 
 # The sidebar only hides links; it does not stop another role from reaching this URL.
-if st.session_state.get('role') not in ('user', 'student'):
+if st.session_state.get('role') != 'resident':
     st.error('You do not have access to this page.')
     st.stop()
 
@@ -47,8 +48,12 @@ ra_response = (api_get(f"/room/dorms/{dorm_id}/rooms/{room_number}/ra", quiet=Tr
 ra = (ra_response or {}).get('ra')
 
 standing = api_get(f"/room_report/users/{USER_ID}/standing", quiet=True) or {}
-open_requests = api_get(f"/request/users/{USER_ID}/requests",
-                        params={"status": "open"}, quiet=True) or []
+# A request someone has picked up is still a request you are waiting on, so both
+# statuses count here. Filtering the API call to 'open' alone made in-progress requests
+# vanish from this page while My Requests went on listing them.
+open_requests = [r for r in (api_get(f"/request/users/{USER_ID}/requests", quiet=True)
+                             or [])
+                 if r['Status'] in REQUEST_IN_FLIGHT]
 away_periods = api_get(f"/away/users/{USER_ID}/away", quiet=True) or []
 todo = (api_get(f"/user/users/{USER_ID}/tasks/todo", quiet=True) or {}).get('todo_tasks', [])
 
@@ -96,17 +101,23 @@ with st.container(border=True):
         f"{open_strikes} of {STRIKE_LIMIT}",
         help="Three open reports naming you escalates to your RA.",
     )
-    cols[2].metric("Open requests", len(open_requests))
+    cols[2].metric("Open requests", len(open_requests),
+                   help="Filed and still waiting on a decision, whether or not someone "
+                        "has picked it up yet.")
 
     current_away = [
         a for a in away_periods
         if to_date(a['Start_Date']) <= today <= to_date(a['End_Date'])
     ]
-    upcoming_away = [a for a in away_periods if to_date(a['Start_Date']) > today]
+    # Sorted rather than relying on the API's newest-first order, which is what made
+    # [-1] the nearest period by accident.
+    upcoming_away = sorted((a for a in away_periods
+                            if to_date(a['Start_Date']) > today),
+                           key=lambda a: to_date(a['Start_Date']))
     if current_away:
         away_label = "Away now"
     elif upcoming_away:
-        away_label = to_date(upcoming_away[-1]['Start_Date']).strftime('%b %d')
+        away_label = to_date(upcoming_away[0]['Start_Date']).strftime('%b %d')
     else:
         away_label = "None set"
     cols[3].metric("Away dates", away_label)
@@ -130,20 +141,31 @@ elif open_strikes == STRIKE_LIMIT - 1:
 left, right = st.columns(2)
 
 with left:
-    st.write("### Due next")
-    dated = sorted(
-        (t for t in todo if t.get('due_date')),
-        key=lambda t: to_date(t['due_date']),
-    )
-    if not dated:
-        st.caption("Nothing on your list right now.")
-    for task in dated[:5]:
-        due = to_date(task['due_date'])
+    # Overdue chores used to be listed under "Due next", which reads as a forecast --
+    # a blown deadline is not something coming up. Same split as the My Chores tabs.
+    open_chores = bucket_chores(todo, today)
+
+    def chore_row(task):
+        due = to_due_date(task)
         label, color = chore_state(task, today)
         with st.container(border=True):
             name_col, due_col = st.columns([3, 2])
             name_col.write(task['Task_Name'])
-            due_col.badge(f"{label} · {due.strftime('%b %d')}", color=color)
+            due_col.badge(f"{label} · {due.strftime('%b %d')}" if due else label,
+                          color=color)
+
+    if open_chores['overdue']:
+        st.write("### Already late")
+        for task in by_due_date(open_chores['overdue'])[:5]:
+            chore_row(task)
+
+    st.write("### Due next")
+    # Undated chores are still chores. Dropping them meant a resident whose chores had
+    # no deadline read "Nothing on your list right now" while holding several.
+    if not open_chores['upcoming']:
+        st.caption("Nothing coming up on your list.")
+    for task in by_due_date(open_chores['upcoming'])[:5]:
+        chore_row(task)
 
 with right:
     st.write("### Waiting on a decision")
@@ -196,10 +218,17 @@ for mate in roommates:
     upcoming = sorted(to_date(t['due_date']) for t in mate_tasks
                       if t.get('due_date') and not is_reportable(t, today))
 
+    # A missed chore is already written off, not outstanding work -- My Chores gives it
+    # its own tab and no Mark done button. Counting it as "unfinished" here said the
+    # opposite of what that page says about the same chore.
+    mate_missed = [t for t in mate_tasks if t['status'] == 'missed']
+    still_open = len(mate_tasks) - len(mate_missed)
+
     with st.container(border=True):
         name_col, count_col, due_col = st.columns([3, 2, 2])
         name_col.write(f"{mate['First_Name']} {mate['Last_Name']}")
-        count_col.write(f"{len(mate_tasks)} unfinished")
+        count_col.write(f"{still_open} unfinished"
+                        + (f" · {len(mate_missed)} missed" if mate_missed else ""))
 
         if reportable:
             due_col.badge(f"{len(reportable)} to report", color="red")

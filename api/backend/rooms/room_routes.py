@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request, current_app
 from backend.db_connection import get_db
+from backend.users.user_routes import VALID_TASK_STATUSES
 from mysql.connector import Error
 
 # Create a Blueprint for Room routes
@@ -191,6 +192,51 @@ def get_room_users(dorm_id, room_number):
         return jsonify(cursor.fetchall()), 200
     except Error as e:
         current_app.logger.error(f'Database error in get_room_users: {e}')
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
+# Get every chore belonging to a room, optionally narrowed by status.
+# Example: /dorms/3/rooms/406/tasks?status=todo,in_progress
+#
+# A chore has no room of its own -- it belongs to whoever is assigned it -- so the room
+# it lives in is only reachable through the assignee. Deriving that here means the suite
+# chart and the RA's room lookup ask one question instead of each pulling the whole
+# Tasks table and filtering it in Python.
+@rooms.route("/dorms/<int:dorm_id>/rooms/<int:room_number>/tasks", methods=["GET"])
+def get_room_tasks(dorm_id, room_number):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        if not _room_exists(cursor, dorm_id, room_number):
+            return jsonify({"error": "Room not found"}), 404
+
+        statuses = [s.strip() for s in request.args.get("status", "").split(",") if s.strip()]
+        invalid = [s for s in statuses if s not in VALID_TASK_STATUSES]
+        if invalid:
+            return jsonify({
+                "error": f"Invalid status: {', '.join(invalid)}. "
+                         f"Must be one of: {', '.join(sorted(VALID_TASK_STATUSES))}"
+            }), 400
+
+        # The assignee's name travels with the chore: the point of a room-wide list is
+        # seeing whose turn each one landed on.
+        query = """
+            SELECT t.*, u.First_Name, u.Last_Name
+            FROM Tasks t
+            JOIN Users u ON t.Assigned_UserID = u.UserID
+            WHERE u.DormID = %s AND u.Room_Number = %s
+        """
+        params = [dorm_id, room_number]
+        if statuses:
+            query += f" AND t.status IN ({', '.join(['%s'] * len(statuses))})"
+            params.extend(statuses)
+        query += " ORDER BY t.due_date, t.Task_ID"
+
+        cursor.execute(query, params)
+        return jsonify(cursor.fetchall()), 200
+    except Error as e:
+        current_app.logger.error(f'Database error in get_room_tasks: {e}')
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()

@@ -28,9 +28,9 @@ st.divider()
 # ---- Drill into one RA --------------------------------------------------
 st.write("### Inspect an RA")
 
-# Key drill-downs on the RA's UserID (the primary key of the RAs table)
+# Key drill-downs on the RA's RA_ID (the primary key of the RAs table)
 options = {
-    f'{r.get("First_Name", "")} {r.get("Last_Name", "")} (ID {r["UserID"]})': r
+    f'{r.get("First_Name", "")} {r.get("Last_Name", "")} (ID {r["RA_ID"]})': r
     for r in ras
 }
 if not options:
@@ -39,7 +39,7 @@ if not options:
 
 choice = st.selectbox("Pick an RA", list(options.keys()))
 ra = options[choice]
-ra_id = ra["UserID"]
+ra_id = ra["RA_ID"]
 
 c1, c2, c3 = st.columns(3)
 c1.metric("Requests settled", ra.get("Settled_Reqs", 0))

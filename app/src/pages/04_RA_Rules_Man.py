@@ -52,11 +52,12 @@ if not ra_id:
 
 ra = api_get(f"/ra/ras/{ra_id}")
 rooms = api_get("/room/rooms") or []
+dorms = api_get("/dorm/dorms") or []
 
 if ra is None:
     st.stop()
 
-dorm_names = {d["DormID"]: d["Dorm_Name"] for d in (api_get("/dorm/dorms") or [])}
+dorm_names = {d["DormID"]: d["Dorm_Name"] for d in dorms}
 
 # A room is keyed by its dorm and its number together, so the lookups key on that
 # pair rather than a single id.
@@ -90,7 +91,7 @@ st.write('#### Add a New Rule')
 
 with st.form("add_rule_form", clear_on_submit=True):
     new_descr = st.text_area("Description")
-    new_room_label = st.selectbox("Room", list(room_label_to_id.keys()))
+    new_room_label = st.selectbox("Room", list(room_label_to_key.keys()))
     add_submitted = st.form_submit_button("Add Rule")
 
 if add_submitted:
@@ -120,7 +121,7 @@ if my_rules:
     selected_label = st.selectbox("Select a rule", list(rule_options.keys()))
     selected_rule = rule_options[selected_label]
 
-    room_label_options = list(room_label_to_id.keys())
+    room_label_options = list(room_label_to_key.keys())
     current_room_label = room_labels.get(
         (selected_rule["DormID"], selected_rule["Room_Number"]))
     current_index = (

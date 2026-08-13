@@ -49,10 +49,16 @@ c3.metric("Year", ra.get("Year") if ra.get("Year") is not None else "—")
 try:
     st.write("#### Residents under this RA")
     ra_users = requests.get(f"{API}/ra/ras/{ra_id}/users").json()
-    st.dataframe(ra_users, use_container_width=True) if ra_users else st.info("None.")
+    if ra_users:
+        st.dataframe(ra_users, use_container_width=True)
+    else:
+        st.info("None.")
 
     st.write("#### Interventions this RA is running")
     interventions = requests.get(f"{API}/ra/ras/{ra_id}/interventions").json()
-    st.dataframe(interventions, use_container_width=True) if interventions else st.info("None.")
+    if interventions:
+        st.dataframe(interventions, use_container_width=True)
+    else:
+        st.info("None.")
 except requests.exceptions.RequestException as e:
     st.error(f"Could not load this RA's detail: {e}")

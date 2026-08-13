@@ -43,6 +43,8 @@ def format_score(score):
 
 rooms = api_get("/room/rooms")
 ras = api_get("/ra/ras") or []
+dorms = api_get("/dorm/dorms") or []
+dorm_names = {d["DormID"]: d["Dorm_Name"] for d in dorms}
 
 if rooms is not None:
     # --- Interventions, gathered by looping over each RA since RA_Intervention
@@ -106,7 +108,7 @@ if rooms is not None:
             score, room = best_room
             st.metric(
                 "Best Performing Room",
-                f"Room {room['Room_Number']} (Dorm {room['DormID']})",
+                f"Room {room['Room_Number']} ({dorm_names.get(room['DormID'], 'Unknown')})",
                 f"{format_score(score)} completion",
             )
         else:
@@ -116,7 +118,7 @@ if rooms is not None:
             score, room = worst_room
             st.metric(
                 "Worst Performing Room",
-                f"Room {room['Room_Number']} (Dorm {room['DormID']})",
+                f"Room {room['Room_Number']} ({dorm_names.get(room['DormID'], 'Unknown')})",
                 f"{format_score(score)} completion",
                 delta_color="inverse",
             )

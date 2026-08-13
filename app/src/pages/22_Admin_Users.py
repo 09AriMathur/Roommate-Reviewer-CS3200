@@ -2,6 +2,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 import streamlit as st
+import pandas as pd
 import requests
 from modules.nav import SideBarLinks
 
@@ -16,12 +17,26 @@ st.caption("Every resident's account, with drill-down into their full profile.")
 # ---- Full roster --------------------------------------------------------
 try:
     users = requests.get(f"{API}/user/users").json()
+    dorms = requests.get(f"{API}/dorm/dorms").json()
 except requests.exceptions.RequestException as e:
     st.error(f"Could not load users from the API: {e}")
     st.stop()
 
+# A room is keyed by its dorm and its number, so a user record already carries both
+# halves -- no room lookup needed. Swap the dorm id for its name while we are here,
+# since "South Hall" reads better on a roster than "2".
+dorm_names = {d["DormID"]: d["Dorm_Name"] for d in dorms}
+for u in users:
+    u["Dorm"] = dorm_names.get(u.get("DormID"))
+
 st.write(f"**{len(users)}** users on record")
-st.dataframe(users, use_container_width=True)
+
+# Order the columns so the dorm and room number sit next to each other
+column_order = ["UserID", "First_Name", "Last_Name", "Email", "RA",
+                "Dorm", "Room_Number", "TasksCompleted", "TasksMissed"]
+df = pd.DataFrame(users)
+df = df[[c for c in column_order if c in df.columns]]
+st.dataframe(df, use_container_width=True, hide_index=True)
 
 st.divider()
 
@@ -54,16 +69,25 @@ try:
     st.write("#### Roommates")
     rm = requests.get(f"{API}/user/users/{user_id}/roommates").json()
     roommates = rm.get("roommates", []) if isinstance(rm, dict) else []
-    st.dataframe(roommates, use_container_width=True) if roommates else st.info("No roommates on record.")
+    if roommates:
+        st.dataframe(roommates, use_container_width=True)
+    else:
+        st.info("No roommates on record.")
 
     # Tasks assigned to / created by this user
     tasks = requests.get(f"{API}/user/users/{user_id}/tasks").json()
     st.write("#### Tasks assigned to them")
     assigned = tasks.get("assigned_tasks", []) if isinstance(tasks, dict) else []
-    st.dataframe(assigned, use_container_width=True) if assigned else st.info("None.")
+    if assigned:
+        st.dataframe(assigned, use_container_width=True)
+    else:
+        st.info("None.")
     st.write("#### Tasks they created")
     created = tasks.get("created_tasks", []) if isinstance(tasks, dict) else []
-    st.dataframe(created, use_container_width=True) if created else st.info("None.")
+    if created:
+        st.dataframe(created, use_container_width=True)
+    else:
+        st.info("None.")
 
 except requests.exceptions.RequestException as e:
     st.error(f"Could not load this user's profile: {e}")

@@ -47,10 +47,16 @@ try:
 
     st.write("#### Activity by room")
     by_room = stats.get("by_room", [])
-    st.dataframe(by_room, use_container_width=True) if by_room else st.info("No rooms.")
+    if by_room:
+        st.dataframe(by_room, use_container_width=True)
+    else:
+        st.info("No rooms.")
 
     st.write("#### Residents")
     residents = requests.get(f"{API}/dorm/dorms/{dorm_id}/users").json()
-    st.dataframe(residents, use_container_width=True) if residents else st.info("None.")
+    if residents:
+        st.dataframe(residents, use_container_width=True)
+    else:
+        st.info("None.")
 except requests.exceptions.RequestException as e:
     st.error(f"Could not load this dorm's detail: {e}")

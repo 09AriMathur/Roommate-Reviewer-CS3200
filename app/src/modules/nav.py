@@ -23,50 +23,34 @@ def about_page_nav():
     st.sidebar.page_link("pages/30_About.py", label="About", icon="ℹ️")
 
 
-# ---- Role: user (Joshua) -----------------------------------------------------
+# ---- Roles: user & student (Joshua & Frank share the same resident pages) ----
 
-def user_start_nav():
-    st.sidebar.page_link("pages/00_User_Start.py", label="Home", icon="🏠")
-
-
-def user_home_nav():
-    st.sidebar.page_link("pages/01_User_Home.py", label="This Week", icon="🗓️")
-
-
-def user_room_reports_nav():
-    st.sidebar.page_link("pages/02_User_Room_Reports.py", label="Chore Reports", icon="📝")
-
-
-def user_ra_interventions_nav():
-    st.sidebar.page_link(
-        "pages/03_User_RA_Interventions.py", label="Ask My RA", icon="🛎️"
-    )
-
-
-def past_tasks_nav():
-    st.sidebar.page_link("pages/04_Past_Tasks.py", label="Task History", icon="🗂️")
-
-
-# ---- Role: student (Frank) ---------------------------------------------------
-
-def student_home_nav():
-    st.sidebar.page_link("pages/10_Student_Home.py", label="Home", icon="🏠")
+def resident_home_nav():
+    st.sidebar.page_link("pages/00_Resident_Home.py", label="Home", icon="🏠")
 
 
 def my_chores_nav():
-    st.sidebar.page_link("pages/11_My_Chores.py", label="My Chores", icon="🧹")
+    st.sidebar.page_link("pages/01_My_Chores.py", label="My Chores", icon="🧹")
+
+
+def chore_reports_nav():
+    st.sidebar.page_link("pages/02_Chore_Reports.py", label="Chore Reports", icon="📝")
 
 
 def my_requests_nav():
-    st.sidebar.page_link("pages/12_My_Requests.py", label="My Requests", icon="✉️")
+    st.sidebar.page_link("pages/03_My_Requests.py", label="My Requests", icon="✉️")
+
+
+def ask_my_ra_nav():
+    st.sidebar.page_link("pages/04_Ask_My_RA.py", label="Ask My RA", icon="🛎️")
 
 
 def my_away_nav():
-    st.sidebar.page_link("pages/13_My_Away.py", label="Away Dates", icon="✈️")
+    st.sidebar.page_link("pages/05_My_Away.py", label="Away Dates", icon="✈️")
 
 
 def my_standing_nav():
-    st.sidebar.page_link("pages/14_My_Standing.py", label="My Standing", icon="📈")
+    st.sidebar.page_link("pages/06_My_Standing.py", label="My Standing", icon="📈")
 
 
 # ---- Role: ra (Carol) --------------------------------------------------------
@@ -141,17 +125,12 @@ def SideBarLinks(show_home=False):
 
     if st.session_state["authenticated"]:
 
-        if st.session_state["role"] == "user":
-            user_start_nav()
-            user_home_nav()
-            user_room_reports_nav()
-            user_ra_interventions_nav()
-            past_tasks_nav()
-
-        if st.session_state["role"] == "student":
-            student_home_nav()
+        if st.session_state["role"] in ("user", "student"):
+            resident_home_nav()
             my_chores_nav()
+            chore_reports_nav()
             my_requests_nav()
+            ask_my_ra_nav()
             my_away_nav()
             my_standing_nav()
 

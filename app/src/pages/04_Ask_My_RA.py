@@ -1,44 +1,27 @@
-import requests
 import streamlit as st
+from modules.api import api_get, api_write
 from modules.nav import SideBarLinks
 
 st.set_page_config(layout='wide')
 
 SideBarLinks()
 
-USER_ID = st.session_state['user_id']
-
-USER_API_URL = "http://web-api:4000/user"
-RA_API_URL = "http://web-api:4000/ra"
-
-try:
-    user_response = requests.get(f"{USER_API_URL}/users/{USER_ID}")
-    user_response.raise_for_status()
-    user = user_response.json()
-except requests.exceptions.RequestException as e:
-    st.error(f"Could not reach the API: {e}")
+if st.session_state.get('role') not in ('user', 'student'):
+    st.error('You do not have access to this page.')
     st.stop()
 
-assigned_ra = None
-if user.get('RA'):
-    try:
-        ra_response = requests.get(f"{RA_API_URL}/ras/{user['RA']}")
-        ra_response.raise_for_status()
-        assigned_ra = ra_response.json()
-    except requests.exceptions.RequestException:
-        assigned_ra = None
+USER_ID = st.session_state['user_id']
+
+user = api_get(f"/user/users/{USER_ID}")
+if user is None:
+    st.stop()
+
+assigned_ra = api_get(f"/ra/ras/{user['RA']}", quiet=True) if user.get('RA') else None
 
 my_interventions = []
 if user.get('RA'):
-    try:
-        interventions_response = requests.get(f"{RA_API_URL}/ras/{user['RA']}/interventions")
-        interventions_response.raise_for_status()
-        my_interventions = [
-            i for i in interventions_response.json() if i['UserID'] == USER_ID
-        ]
-    except requests.exceptions.RequestException as e:
-        st.error(f"Could not reach the API: {e}")
-        st.stop()
+    interventions = api_get(f"/ra/ras/{user['RA']}/interventions", quiet=True) or []
+    my_interventions = [i for i in interventions if i['UserID'] == USER_ID]
 
 STATUS_BADGES = {
     'pending': ('Pending', 'orange'),
@@ -54,7 +37,7 @@ def render_intervention_row(intervention):
         st.caption(intervention.get('Description') or "No description provided.")
 
 
-st.title("RA Interventions")
+st.title("Ask My RA")
 st.caption("Ask your RA to step in when the roommate agreement isn't being upheld")
 
 if not assigned_ra:
@@ -89,13 +72,10 @@ with new_request_col:
                 if not description.strip():
                     st.error("Please provide a short description of the issue.")
                 else:
-                    create_response = requests.post(
-                        f"{RA_API_URL}/ras/interventions",
-                        json={
-                            "UserID": USER_ID,
-                            "Description": description.strip(),
-                        },
-                    )
-                    create_response.raise_for_status()
-                    st.success("Your RA has been notified.")
-                    st.rerun()
+                    status, _ = api_write("POST", "/ra/ras/interventions", {
+                        "UserID": USER_ID,
+                        "Description": description.strip(),
+                    })
+                    if status == 201:
+                        st.success("Your RA has been notified.")
+                        st.rerun()

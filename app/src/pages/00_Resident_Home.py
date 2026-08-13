@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import datetime, date
 from email.utils import parsedate_to_datetime
 
 import streamlit as st
@@ -10,7 +10,7 @@ st.set_page_config(layout='wide')
 SideBarLinks()
 
 # The sidebar only hides links; it does not stop another role from reaching this URL.
-if st.session_state.get('role') != 'student':
+if st.session_state.get('role') not in ('user', 'student'):
     st.error('You do not have access to this page.')
     st.stop()
 
@@ -19,9 +19,18 @@ USER_ID = st.session_state['user_id']
 # The three strikes that trigger an RA conversation. Used here and on My Standing.
 STRIKE_LIMIT = 3
 
+# Record the moment this user session landed on the page. Only set it
+# once so it reflects login time, not the time of the most recent rerun.
+if 'login_time' not in st.session_state:
+    st.session_state['login_time'] = datetime.now()
+
+login_time = st.session_state['login_time']
+
 user = api_get(f"/user/users/{USER_ID}")
 if user is None:
     st.stop()
+
+st.session_state['first_name'] = user['First_Name']
 
 room_id = user.get('RoomID')
 
@@ -38,7 +47,8 @@ open_requests = api_get(f"/request/users/{USER_ID}/requests",
 away_periods = api_get(f"/away/users/{USER_ID}/away", quiet=True) or []
 todo = (api_get(f"/user/users/{USER_ID}/tasks/todo", quiet=True) or {}).get('todo_tasks', [])
 
-st.title(f"Hi, {user['First_Name']}.")
+st.title(f"Welcome, {user['First_Name']}.")
+st.caption(f"Logged in on {login_time.strftime('%A, %B %d, %Y at %I:%M %p')}")
 
 context = []
 if dorm:
@@ -47,7 +57,8 @@ if room:
     context.append(f"Room {room['Room_Number']}")
 if ra:
     context.append(f"RA {ra['First_Name']} {ra['Last_Name']}")
-st.caption(" · ".join(context) if context else "No room assignment on file")
+if context:
+    st.caption(" · ".join(context))
 
 today = date.today()
 
@@ -57,7 +68,7 @@ def to_date(value):
     return parsedate_to_datetime(value).date() if value else None
 
 
-# ---- The numbers that decide whether Frank is in trouble ---------------------
+# ---- The numbers that decide how this resident is doing -----------------------
 
 completion = standing.get('completion_pct')
 suite_avg = standing.get('suite_avg_pct')
@@ -106,7 +117,7 @@ elif open_strikes == STRIKE_LIMIT - 1:
         f"You currently have {open_strikes}."
     )
 
-# ---- What is coming up, and what is already in flight ------------------------
+# ---- What is coming up, and what is already in flight --------------------------
 
 left, right = st.columns(2)
 
@@ -138,14 +149,35 @@ with right:
             type_col.badge(req['Request_Type'].replace('_', ' ').title(), color="blue")
             reason_col.write(req.get('Reason') or "_No reason given_")
 
-st.write('### What would you like to do?')
+# ---- Everywhere else a resident can go -----------------------------------------
 
-nav_cols = st.columns(4)
-if nav_cols[0].button('My Chores', type='primary', use_container_width=True):
-    st.switch_page('pages/11_My_Chores.py')
-if nav_cols[1].button('My Requests', type='primary', use_container_width=True):
-    st.switch_page('pages/12_My_Requests.py')
-if nav_cols[2].button('Away Dates', type='primary', use_container_width=True):
-    st.switch_page('pages/13_My_Away.py')
-if nav_cols[3].button('My Standing', type='primary', use_container_width=True):
-    st.switch_page('pages/14_My_Standing.py')
+st.write('### What would you like to do today?')
+
+# Bordered columns give each row of cards a matching height, which keeps the
+# buttons level -- but only while the descriptions all wrap to the same number
+# of lines. Keep them to one short line each.
+top_row = st.columns(3, gap='medium', border=True)
+top_cards = [
+    ("My Chores", "Your rotation, day by day.", "pages/01_My_Chores.py", "go_chores"),
+    ("Chore Reports", "Flag a skipped chore.", "pages/02_Chore_Reports.py", "go_reports"),
+    ("My Requests", "Extensions, swaps, disputes.", "pages/03_My_Requests.py", "go_requests"),
+]
+for col, (label, caption, page, key) in zip(top_row, top_cards):
+    with col:
+        st.markdown(f"**{label}**")
+        st.caption(caption)
+        if st.button("Open", type="primary", use_container_width=True, key=key):
+            st.switch_page(page)
+
+bottom_row = st.columns(3, gap='medium', border=True)
+bottom_cards = [
+    ("Ask My RA", "Ask your RA to step in.", "pages/04_Ask_My_RA.py", "go_ra"),
+    ("Away Dates", "Mark the days you'll be gone.", "pages/05_My_Away.py", "go_away"),
+    ("My Standing", "How close you are to an RA conversation.", "pages/06_My_Standing.py", "go_standing"),
+]
+for col, (label, caption, page, key) in zip(bottom_row, bottom_cards):
+    with col:
+        st.markdown(f"**{label}**")
+        st.caption(caption)
+        if st.button("Open", type="primary", use_container_width=True, key=key):
+            st.switch_page(page)

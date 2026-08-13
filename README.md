@@ -27,12 +27,17 @@ no real login, the buttons just set a role in the session.
 
 | Persona | Role | What they do |
 | --- | --- | --- |
-| **Joshua Patel** | Resident | Plans the week's chores, checks them off, files a report when a roommate skips one, and browses the room's task history. |
-| **Frank Osei** | Resident falling behind | Asks for extensions, disputes reports filed against him, marks the days he is away, and watches his standing against the room. |
+| **Joshua Patel** | Resident | On track: chores done, no strikes, nothing overdue. |
+| **Frank Osei** | Resident falling behind | Behind on chores with open strikes and requests, so the same pages tell a very different story. |
 | **Carol Diaz** | Residence Advisor | Reviews reports across her rooms, tracks completion rates, manages interventions, and sets the rules. |
 
-Each persona has a landing page plus four feature pages, for twelve feature
-pages in total.
+Joshua and Frank are both Residents and see the identical set of nine pages —
+a shared home dashboard plus eight feature pages (This Week, Chore Reports,
+Ask My RA, Task History, My Chores, My Requests, Away Dates, My Standing).
+The two personas exist to show how differently those same pages read for a
+resident who is keeping up versus one who isn't, driven entirely by the data
+behind each seeded user. Carol, as the Residence Advisor, has her own home
+page plus four RA-only feature pages.
 
 ## Architecture
 

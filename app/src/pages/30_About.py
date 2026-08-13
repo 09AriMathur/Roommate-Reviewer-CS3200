@@ -22,20 +22,25 @@ st.markdown(
 
 st.write("### Who uses it")
 
+st.caption(
+    "The two Resident personas see the identical set of pages -- the "
+    "difference is entirely in the data behind them."
+)
+
 roles = st.columns(3, gap='medium', border=True)
 
 with roles[0]:
-    st.markdown("**Resident**")
+    st.markdown("**Resident, on track**")
     st.caption(
-        "Plans the week's chores, checks them off, and files a report when a "
-        "roommate skips one."
+        "Chores done, no open strikes, nothing overdue. The dashboard and "
+        "requests pages stay quiet."
     )
 
 with roles[1]:
-    st.markdown("**Resident falling behind**")
+    st.markdown("**Resident, falling behind**")
     st.caption(
-        "Asks for extensions, disputes reports filed against them, marks away "
-        "dates, and watches their standing against the room."
+        "Missed chores, open strikes, and pending requests -- the same "
+        "pages, but every warning banner is lit up."
     )
 
 with roles[2]:

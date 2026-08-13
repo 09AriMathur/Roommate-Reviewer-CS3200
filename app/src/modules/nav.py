@@ -10,6 +10,7 @@ ROLE_LABELS = {
     "user": "Resident",
     "student": "Resident",
     "ra": "Residence Advisor",
+    "admin": "System Administrator",
 }
 
 
@@ -97,6 +98,28 @@ def ra_rules_man_nav():
     st.sidebar.page_link("pages/04_RA_Rules_Man.py", label="Rules", icon="📜")
 
 
+# ---- Role: admin (Sam) -------------------------------------------------------
+
+def admin_home_nav():
+    st.sidebar.page_link("pages/20_Admin_Home.py", label="Home", icon="🏠")
+
+
+def admin_activity_nav():
+    st.sidebar.page_link("pages/21_Admin_Activity.py", label="Activity Log", icon="🧾")
+
+
+def admin_users_nav():
+    st.sidebar.page_link("pages/22_Admin_Users.py", label="User Accounts", icon="👥")
+
+
+def admin_ras_nav():
+    st.sidebar.page_link("pages/23_Admin_RAs.py", label="Resident Advisors", icon="🧑‍🏫")
+
+
+def admin_dorms_nav():
+    st.sidebar.page_link("pages/24_Admin_Dorms.py", label="Dorms & Occupancy", icon="🏢")
+
+
 # ---- Sidebar assembly -------------------------------------------------------
 
 def current_user_nav():
@@ -161,6 +184,13 @@ def SideBarLinks(show_home=False):
             ra_preform_overview_nav()
             ra_inter_man_nav()
             ra_rules_man_nav()
+
+        if st.session_state["role"] == "admin":
+            admin_home_nav()
+            admin_activity_nav()
+            admin_users_nav()
+            admin_ras_nav()
+            admin_dorms_nav()
 
         st.sidebar.divider()
 

@@ -100,3 +100,25 @@ with carol_col:
         st.session_state['user_id'] = 1
         logger.info("Logging in as Residence Advisor Persona")
         st.switch_page('pages/00_RA_Home.py')
+
+# The System Administrator is our 4th persona. The two residents and the RA are the
+# three personas built out for the MVP; the admin sits above them with a read-across
+# oversight view of every resident, RA, dorm, and the building-wide activity log.
+st.write("")
+admin_box = st.container(border=True)
+with admin_box:
+    st.markdown('### Sam Reynolds')
+    st.badge('System Administrator', color='gray')
+    st.caption(
+        "Oversees every resident, RA, dorm, and the building-wide activity log."
+    )
+    if st.button('Log in as Sam',
+                 type='primary',
+                 use_container_width=True):
+        st.session_state['authenticated'] = True
+        st.session_state['role'] = 'admin'
+        st.session_state['first_name'] = 'Sam'
+        # Sam Reynolds is System_Admin.AdminID 1 in the seed data.
+        st.session_state['user_id'] = 1
+        logger.info("Logging in as System Administrator Persona")
+        st.switch_page('pages/20_Admin_Home.py')

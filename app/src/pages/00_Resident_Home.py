@@ -3,6 +3,7 @@ from email.utils import parsedate_to_datetime
 
 import streamlit as st
 from modules.api import api_get
+from modules.labels import chore_state, is_overdue
 from modules.nav import SideBarLinks
 
 st.set_page_config(layout='wide')
@@ -138,13 +139,11 @@ with left:
         st.caption("Nothing on your list right now.")
     for task in dated[:5]:
         due = to_date(task['due_date'])
+        label, color = chore_state(task, today)
         with st.container(border=True):
             name_col, due_col = st.columns([3, 2])
             name_col.write(task['Task_Name'])
-            if due < today:
-                due_col.badge(f"Overdue · {due.strftime('%b %d')}", color="red")
-            else:
-                due_col.badge(due.strftime('%b %d'), color="gray")
+            due_col.badge(f"{label} · {due.strftime('%b %d')}", color=color)
 
 with right:
     st.write("### Waiting on a decision")
@@ -181,7 +180,7 @@ for mate in roommates:
                           params={"status": "todo,in_progress"}, quiet=True)
                   or {}).get('assigned_tasks', [])
     mate_due = sorted(to_date(t['due_date']) for t in mate_tasks if t.get('due_date'))
-    overdue_count = sum(1 for due in mate_due if due < today)
+    overdue_count = sum(1 for t in mate_tasks if is_overdue(t, today))
 
     with st.container(border=True):
         name_col, count_col, due_col = st.columns([3, 2, 2])

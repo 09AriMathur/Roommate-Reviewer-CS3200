@@ -5,6 +5,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 from modules.api import api_get, api_write
+from modules.labels import chore_state, is_overdue
 from modules.nav import SideBarLinks
 
 st.set_page_config(layout='wide')
@@ -35,7 +36,6 @@ group = [user] + roommates
 member_by_id = {member['UserID']: member for member in group}
 
 today = date.today()
-cutoff = today - timedelta(days=14)
 
 dorm_name = None
 if user.get('DormID') is not None:
@@ -47,11 +47,17 @@ def is_reportable(task):
     has passed. A chore already marked missed qualifies whatever its due date says."""
     if task['status'] == 'done':
         return False
-    if task['status'] == 'missed':
-        return True
-    due = parsedate_to_datetime(task['due_date']).date() if task.get('due_date') else None
-    return due is not None and due < today
+    return task['status'] == 'missed' or is_overdue(task, today)
 
+
+# Chores this resident already has an open report on. The API refuses a second one, so
+# offering them again in the picker just leads to a 409 on submit.
+already_reported = {
+    report['TaskID']
+    for report in (api_get(f"/room_report/users/{USER_ID}/room_reports",
+                           params={"role": "filed", "status": "open"}, quiet=True) or [])
+    if report.get('TaskID') is not None
+}
 
 # Only a roommate's chores are reportable -- never your own. The loop runs over
 # `roommates` rather than `group` for exactly that reason; `group` still backs the
@@ -61,14 +67,13 @@ open_tasks = []
 for member in roommates:
     member_tasks = (api_get(f"/user/users/{member['UserID']}/tasks/assigned", quiet=True)
                      or {}).get('assigned_tasks', [])
-    open_tasks.extend(t for t in member_tasks if is_reportable(t))
+    open_tasks.extend(t for t in member_tasks
+                      if is_reportable(t) and t['Task_ID'] not in already_reported)
 
-# Drop stale tasks (no due date can't be judged as "old", so those stay) and
-# show the most recently due tasks first.
-open_tasks = [
-    task for task in open_tasks
-    if not task.get('due_date') or parsedate_to_datetime(task['due_date']).date() >= cutoff
-]
+# Most recently due first. There is no recency window: an overdue chore stays reportable
+# until it is done or marked missed, and a 14-day cut-off here hid chores the API would
+# still accept a report on -- and hid the reports themselves from the list below while
+# My Standing went on counting them as strikes.
 open_tasks.sort(
     key=lambda t: parsedate_to_datetime(t['due_date']).date() if t.get('due_date') else date.min,
     reverse=True,
@@ -84,27 +89,17 @@ for member in group:
     ) or []
     reports.extend(member_reports)
 
-# Most recent first, and drop anything older than the 14-day window.
-reports = [
-    r for r in reports
-    if parsedate_to_datetime(r['Time_Reported']).date() >= cutoff
-]
+# Most recent first. Every report naming the suite shows here, however old -- a strike
+# counts against a resident until it is closed, so hiding an older one left My Standing
+# and this page telling different stories about the same three reports.
 reports.sort(key=lambda r: parsedate_to_datetime(r['Time_Reported']), reverse=True)
-
-
-TASK_STATUS_LABELS = {
-    'todo': 'To Do',
-    'in_progress': 'In Progress',
-    'missed': 'Missed',
-}
 
 
 def format_task_option(task):
     assignee = member_by_id.get(task['Assigned_UserID'])
     who = f"{assignee['First_Name']} {assignee['Last_Name']}" if assignee else "Unassigned"
-    status_label = TASK_STATUS_LABELS.get(task['status'], task['status'])
     due = parsedate_to_datetime(task['due_date']).strftime('%b %d') if task.get('due_date') else "no due date"
-    return f"{task['Task_Name']} — {who} — Due {due} — {status_label}"
+    return f"{task['Task_Name']} — {who} — Due {due} — {chore_state(task, today)[0]}"
 
 
 def format_report_time(raw):
@@ -169,11 +164,12 @@ with new_report_col:
         st.subheader(f"New Report @ {draft_time.strftime('%b %d, %I:%M %p')}")
 
         if not open_tasks:
-            # Both bounds matter: the server rejects a chore that isn't due yet, and
-            # this page only lists chores due within the last 14 days.
+            # Everything the server would refuse is already absent from the list, so say
+            # what the list is rather than what went wrong.
             st.markdown(
-                ":gray[*Nothing to report. A chore is reportable in the two weeks "
-                "after its due date, and only your roommates' chores count.*]"
+                ":gray[*Nothing to report. Only your roommates' chores count, only once "
+                "the due date has passed, and a chore you have already reported is not "
+                "offered twice.*]"
             )
         else:
             selected_task = st.selectbox(

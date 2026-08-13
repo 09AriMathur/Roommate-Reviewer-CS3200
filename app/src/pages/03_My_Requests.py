@@ -79,7 +79,7 @@ def file_request(default_type="extension", default_reason=""):
     task_id = None
     if request_type in TYPES_NEEDING_TASK:
         if not assigned:
-            st.warning("You have no assigned chores to attach a request to.")
+            st.warning("You have no open chores to attach a request to.")
         else:
             task_id = st.selectbox(
                 "Which chore?",
@@ -87,9 +87,17 @@ def file_request(default_type="extension", default_reason=""):
                 format_func=lambda tid: task_labels.get(tid, f"Task {tid}"),
             )
 
+    # An extension or a swap is a request about a specific chore. Filing one with no
+    # chore attached used to be possible -- only the reason was checked -- and produced a
+    # request nobody could act on, since there was nothing to move or reschedule. With
+    # nothing to attach, the rest of the form has nothing to describe, so it comes out
+    # disabled rather than accepting input that cannot be submitted.
+    blocked = request_type in TYPES_NEEDING_TASK and task_id is None
+
     proposed = None
     if request_type == "extension":
-        proposed = st.date_input("New due date", value=date.today() + timedelta(days=3))
+        proposed = st.date_input("New due date", value=date.today() + timedelta(days=3),
+                                 disabled=blocked)
 
     if request_type == "swap":
         st.caption(
@@ -97,11 +105,18 @@ def file_request(default_type="extension", default_reason=""):
             "records the chore you're giving up, and your roommates agree to the rest."
         )
 
-    reason = st.text_area("Reason", value=default_reason, height=110)
+    reason = st.text_area("Reason", value=default_reason, height=110, disabled=blocked)
 
-    if st.button("Submit request", type="primary", use_container_width=True):
+    if st.button("Submit request", type="primary", use_container_width=True,
+                 disabled=blocked):
         if not reason.strip():
             st.error("Give a reason so your roommates know what they're deciding on.")
+            return
+
+        # The button is disabled in this case, so this is a guard against the chore
+        # disappearing between the dialog opening and the press, not a normal path.
+        if request_type in TYPES_NEEDING_TASK and task_id is None:
+            st.error("Pick the chore this request is about.")
             return
 
         payload = {

@@ -109,7 +109,7 @@ def format_task_option(task):
 
 def format_report_time(raw):
     reported_at = parsedate_to_datetime(raw)
-    return f"{reported_at.strftime('%a')} @ {reported_at.strftime('%I:%M %p')}"
+    return reported_at.strftime('%b %d, %I:%M %p')
 
 
 REPORT_STATUS_BADGES = {
@@ -130,7 +130,19 @@ def render_report_row(report):
             label, color = REPORT_STATUS_BADGES.get(report['Status'], (report['Status'], 'gray'))
             st.badge(label, color=color)
         with time_col:
-            st.markdown(format_report_time(report['Time_Reported']))
+            # Three different dates hang off one report -- when the chore was due, when
+            # the report was filed, and when it was reviewed. Showing one unlabelled left
+            # a reviewed report looking as though the review predated the deadline.
+            st.markdown(f"Filed {format_report_time(report['Time_Reported'])}")
+            if report.get('due_date'):
+                st.caption(
+                    f"Chore was due "
+                    f"{parsedate_to_datetime(report['due_date']).strftime('%b %d, %Y')}"
+                )
+            if report.get('Reviewed_At'):
+                st.caption(
+                    f"Reviewed {format_report_time(report['Reviewed_At'])}"
+                )
             st.caption(f"Assigned to {assignee_name}")
         if report.get('Description'):
             st.caption(report['Description'])

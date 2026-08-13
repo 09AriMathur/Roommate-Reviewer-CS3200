@@ -156,6 +156,49 @@ with right:
             type_col.badge(req['Request_Type'].replace('_', ' ').title(), color="blue")
             reason_col.write(req.get('Reason') or "_No reason given_")
 
+# ---- Who else lives here, and what they still owe -------------------------------
+
+# A resident could previously see their own list and nothing else, which makes a shared
+# rotation impossible to judge -- there was no way to tell whether the suite was pulling
+# its weight without opening Chore Reports and reading the reportable list.
+st.write("### Around the suite")
+
+roommates = (api_get(f"/user/users/{USER_ID}/roommates", quiet=True)
+             or {}).get('roommates', [])
+
+if not roommates:
+    st.caption("You have no roommates on file.")
+else:
+    st.caption(
+        "What your suitemates still have open. An overdue chore is the one thing you can "
+        "file a report about, on the Chore Reports page."
+    )
+
+for mate in roommates:
+    # Chores in play only. Their finished ones are their business, and a count that
+    # included them would not say anything about what is outstanding.
+    mate_tasks = (api_get(f"/user/users/{mate['UserID']}/tasks/assigned",
+                          params={"status": "todo,in_progress"}, quiet=True)
+                  or {}).get('assigned_tasks', [])
+    mate_due = sorted(to_date(t['due_date']) for t in mate_tasks if t.get('due_date'))
+    overdue_count = sum(1 for due in mate_due if due < today)
+
+    with st.container(border=True):
+        name_col, count_col, due_col = st.columns([3, 2, 2])
+        name_col.write(f"{mate['First_Name']} {mate['Last_Name']}")
+        count_col.write(f"{len(mate_tasks)} open")
+
+        if overdue_count:
+            due_col.badge(f"{overdue_count} overdue · {mate_due[0].strftime('%b %d')}",
+                          color="red")
+        elif mate_due:
+            due_col.badge(f"Next {mate_due[0].strftime('%b %d')}", color="gray")
+        elif mate_tasks:
+            due_col.caption("No due dates set")
+        else:
+            due_col.caption("All clear")
+
+
 # ---- Everywhere else a resident can go -----------------------------------------
 
 st.write('### What would you like to do today?')

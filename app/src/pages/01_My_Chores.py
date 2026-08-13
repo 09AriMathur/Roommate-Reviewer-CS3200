@@ -99,9 +99,16 @@ def ask_about(task):
     if due:
         st.caption(f"Currently due {due.strftime('%B %d, %Y')}")
 
+    # What can be asked for depends on where the chore stands. A missed chore has already
+    # been marked down, so the only thing left is to contest that; more time on a deadline
+    # that has already been ruled on is not a thing to ask for. An open chore has not been
+    # marked down yet, so there is nothing to dispute.
+    options = (["dispute"] if task['status'] == 'missed'
+               else ["extension", "swap"])
+
     request_type = st.radio(
         "What do you need?",
-        ["extension", "swap", "dispute"],
+        options,
         format_func=lambda t: {
             "extension": "More time on it",
             "swap": "Someone to take it",

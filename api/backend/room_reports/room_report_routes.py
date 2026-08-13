@@ -50,10 +50,12 @@ def create_new_room_report():
         # and both rules below depend on who it belongs to and when it was due.
         cursor.execute(
             """
-                SELECT Task_ID, Task_Name, Assigned_UserID, status, due_date,
-                       (due_date IS NOT NULL AND due_date < CURDATE()) AS past_due
-                FROM Tasks
-                WHERE Task_ID = %s
+                SELECT t.Task_ID, t.Task_Name, t.Assigned_UserID, t.status, t.due_date,
+                       (t.due_date IS NOT NULL AND t.due_date < CURDATE()) AS past_due,
+                       a.DormID AS assignee_dorm, a.Room_Number AS assignee_room
+                FROM Tasks t
+                LEFT JOIN Users a ON t.Assigned_UserID = a.UserID
+                WHERE t.Task_ID = %s
             """,
             (data["TaskID"],),
         )
@@ -62,8 +64,12 @@ def create_new_room_report():
         if not task:
             return jsonify({"error": "Task not found"}), 404
 
-        cursor.execute("SELECT UserID FROM Users WHERE UserID = %s", (data["UserID"],))
-        if not cursor.fetchone():
+        cursor.execute(
+            "SELECT UserID, DormID, Room_Number FROM Users WHERE UserID = %s",
+            (data["UserID"],),
+        )
+        filer = cursor.fetchone()
+        if not filer:
             return jsonify({"error": "User not found"}), 404
 
         # Room_Reports.UserID is the person filing; the person being accused is the
@@ -72,6 +78,29 @@ def create_new_room_report():
                 and int(data["UserID"]) == int(task["Assigned_UserID"])):
             return jsonify({
                 "error": "You cannot file a report about a chore assigned to you."
+            }), 409
+
+        # A report is a roommate saying the shared space went unattended, and the strike
+        # it produces is what escalates to that room's RA. Someone in another suite has
+        # no standing to file it, and an unassigned chore has nobody to name.
+        if task["Assigned_UserID"] is None:
+            return jsonify({
+                "error": f"\"{task['Task_Name']}\" is not assigned to anyone, so there is "
+                         "nobody to report."
+            }), 409
+
+        if ((filer["DormID"], filer["Room_Number"])
+                != (task["assignee_dorm"], task["assignee_room"])):
+            return jsonify({
+                "error": "You can only report a chore belonging to someone in your room."
+            }), 409
+
+        # Nothing was skipped if the chore got done, whenever it was due. Contest a
+        # completion you think is false rather than filing a report over it.
+        if task["status"] == "done":
+            return jsonify({
+                "error": f"\"{task['Task_Name']}\" is already marked done, so it cannot be "
+                         "reported as incomplete."
             }), 409
 
         # "This was not done" only means anything once the deadline has passed. A
@@ -147,6 +176,17 @@ def update_room_report(report_id):
 
         if not update_fields:
             return jsonify({"error": "No valid fields to update"}), 400
+
+        # Time_Reported is when the report was filed, so it cannot double as the review
+        # date -- a report filed in July about a chore due in August, then reviewed in
+        # September, has three different dates and only two columns to hold them.
+        # Reviewed_At is set the moment an RA moves the report off 'open', and cleared
+        # if it is reopened, so it is never a date for a review that has not happened.
+        if "Status" in data:
+            if data["Status"] == "open":
+                update_fields.append("Reviewed_At = NULL")
+            else:
+                update_fields.append("Reviewed_At = COALESCE(Reviewed_At, NOW())")
 
         params.append(report_id)
         query = f"UPDATE Room_Reports SET {', '.join(update_fields)} WHERE ReportID = %s"

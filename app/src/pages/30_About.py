@@ -75,5 +75,15 @@ st.markdown(
     """
 )
 
-if st.button("Return to Home", type="primary"):
-    st.switch_page("Home.py")
+# Send the user back into their own area rather than out to the login screen.
+# Falls back to the login page if somehow no role is set.
+_home_by_role = {
+    "user": "pages/00_Resident_Home.py",
+    "student": "pages/00_Resident_Home.py",
+    "ra": "pages/00_RA_Home.py",
+    "admin": "pages/20_Admin_Home.py",
+}
+_back_target = _home_by_role.get(st.session_state.get("role"), "Home.py")
+
+if st.button("← Back", type="primary"):
+    st.switch_page(_back_target)

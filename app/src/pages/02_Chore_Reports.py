@@ -5,7 +5,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 from modules.api import api_get, api_write
-from modules.labels import chore_state, is_overdue
+from modules.labels import chore_state, is_reportable
 from modules.nav import SideBarLinks
 
 st.set_page_config(layout='wide')
@@ -42,14 +42,6 @@ if user.get('DormID') is not None:
     dorm = api_get(f"/dorm/dorms/{user['DormID']}", quiet=True)
     dorm_name = (dorm or {}).get('Dorm_Name')
 
-def is_reportable(task):
-    """A report says a chore was skipped, so it only makes sense once the deadline
-    has passed. A chore already marked missed qualifies whatever its due date says."""
-    if task['status'] == 'done':
-        return False
-    return task['status'] == 'missed' or is_overdue(task, today)
-
-
 # Chores this resident already has an open report on. The API refuses a second one, so
 # offering them again in the picker just leads to a 409 on submit.
 already_reported = {
@@ -68,7 +60,7 @@ for member in roommates:
     member_tasks = (api_get(f"/user/users/{member['UserID']}/tasks/assigned", quiet=True)
                      or {}).get('assigned_tasks', [])
     open_tasks.extend(t for t in member_tasks
-                      if is_reportable(t) and t['Task_ID'] not in already_reported)
+                      if is_reportable(t, today) and t['Task_ID'] not in already_reported)
 
 # Most recently due first. There is no recency window: an overdue chore stays reportable
 # until it is done or marked missed, and a 14-day cut-off here hid chores the API would

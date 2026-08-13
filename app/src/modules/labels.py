@@ -53,6 +53,18 @@ def is_overdue(task, today=None):
     return due is not None and due < (today or date.today())
 
 
+def is_reportable(task, today=None):
+    """Whether a roommate could file a report about this chore.
+
+    A report says the chore was skipped, so it needs a deadline that has passed -- or a
+    chore already marked missed, which is that judgement having been made. Mirrors the
+    rules POST /room_report/room_reports enforces, minus the ones about who is asking.
+    """
+    if task['status'] == 'done':
+        return False
+    return task['status'] == 'missed' or is_overdue(task, today)
+
+
 def chore_state(task, today=None):
     """The (label, colour) pair for a chore. Overdue outranks the raw status because a
     blown deadline is the thing that matters about a chore that is still open."""

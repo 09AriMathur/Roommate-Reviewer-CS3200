@@ -3,7 +3,7 @@ from email.utils import parsedate_to_datetime
 
 import streamlit as st
 from modules.api import api_get
-from modules.labels import chore_state, is_overdue
+from modules.labels import chore_state, is_reportable
 from modules.nav import SideBarLinks
 
 st.set_page_config(layout='wide')
@@ -169,31 +169,44 @@ if not roommates:
     st.caption("You have no roommates on file.")
 else:
     st.caption(
-        "What your suitemates still have open. An overdue chore is the one thing you can "
-        "file a report about, on the Chore Reports page."
+        "What your suitemates still have unfinished. A chore that is overdue or already "
+        "marked missed is one you can report, on the Chore Reports page."
     )
 
+# One call, so this panel counts exactly what the report picker would offer -- a chore
+# already reported is not offered twice, and should not be advertised here either.
+my_open_reports = {
+    report['TaskID']
+    for report in (api_get(f"/room_report/users/{USER_ID}/room_reports",
+                           params={"role": "filed", "status": "open"}, quiet=True) or [])
+    if report.get('TaskID') is not None
+}
+
 for mate in roommates:
-    # Chores in play only. Their finished ones are their business, and a count that
-    # included them would not say anything about what is outstanding.
+    # 'missed' belongs here alongside the chores still in play. Leaving it out said a
+    # roommate was all clear while the Chore Reports page was offering their missed chore
+    # to report. Their finished chores stay out: those are not outstanding.
     mate_tasks = (api_get(f"/user/users/{mate['UserID']}/tasks/assigned",
-                          params={"status": "todo,in_progress"}, quiet=True)
+                          params={"status": "todo,in_progress,missed"}, quiet=True)
                   or {}).get('assigned_tasks', [])
-    mate_due = sorted(to_date(t['due_date']) for t in mate_tasks if t.get('due_date'))
-    overdue_count = sum(1 for t in mate_tasks if is_overdue(t, today))
+    reportable = [t for t in mate_tasks
+                  if is_reportable(t, today) and t['Task_ID'] not in my_open_reports]
+    # Only chores with time left on them have a "next due" to show; the rest are the
+    # ones the badge is already reporting on.
+    upcoming = sorted(to_date(t['due_date']) for t in mate_tasks
+                      if t.get('due_date') and not is_reportable(t, today))
 
     with st.container(border=True):
         name_col, count_col, due_col = st.columns([3, 2, 2])
         name_col.write(f"{mate['First_Name']} {mate['Last_Name']}")
-        count_col.write(f"{len(mate_tasks)} open")
+        count_col.write(f"{len(mate_tasks)} unfinished")
 
-        if overdue_count:
-            due_col.badge(f"{overdue_count} overdue · {mate_due[0].strftime('%b %d')}",
-                          color="red")
-        elif mate_due:
-            due_col.badge(f"Next {mate_due[0].strftime('%b %d')}", color="gray")
+        if reportable:
+            due_col.badge(f"{len(reportable)} to report", color="red")
+        elif upcoming:
+            due_col.badge(f"Next {upcoming[0].strftime('%b %d')}", color="gray")
         elif mate_tasks:
-            due_col.caption("No due dates set")
+            due_col.caption("Nothing to report")
         else:
             due_col.caption("All clear")
 

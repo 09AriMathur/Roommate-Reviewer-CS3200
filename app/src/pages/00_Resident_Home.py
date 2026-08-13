@@ -32,13 +32,17 @@ if user is None:
 
 st.session_state['first_name'] = user['First_Name']
 
-room_id = user.get('RoomID')
+# A room is identified by its dorm plus its number, so the resident record carries
+# both halves and there is no separate room id to look up.
+dorm_id = user.get('DormID')
+room_number = user.get('Room_Number')
+has_room = dorm_id is not None and room_number is not None
 
-# Room, dorm and RA are all optional context -- a resident with no room assignment
-# should still get a working page, so these stay quiet on failure.
-room = api_get(f"/room/rooms/{room_id}", quiet=True) if room_id else None
-dorm = api_get(f"/dorm/dorms/{room['DormID']}", quiet=True) if room else None
-ra_response = api_get(f"/room/rooms/{room_id}/ra", quiet=True) if room_id else None
+# Dorm and RA are optional context -- a resident with no room assignment should still
+# get a working page, so these stay quiet on failure.
+dorm = api_get(f"/dorm/dorms/{dorm_id}", quiet=True) if has_room else None
+ra_response = (api_get(f"/room/dorms/{dorm_id}/rooms/{room_number}/ra", quiet=True)
+               if has_room else None)
 ra = (ra_response or {}).get('ra')
 
 standing = api_get(f"/room_report/users/{USER_ID}/standing", quiet=True) or {}
@@ -53,8 +57,8 @@ st.caption(f"Logged in on {login_time.strftime('%A, %B %d, %Y at %I:%M %p')}")
 context = []
 if dorm:
     context.append(dorm['Dorm_Name'])
-if room:
-    context.append(f"Room {room['Room_Number']}")
+if has_room:
+    context.append(f"Room {room_number}")
 if ra:
     context.append(f"RA {ra['First_Name']} {ra['Last_Name']}")
 if context:
@@ -107,9 +111,12 @@ with st.container(border=True):
     cols[3].metric("Away dates", away_label)
 
 if open_strikes >= STRIKE_LIMIT:
+    # Careful with the wording: nothing in the app actually notifies an RA at this
+    # threshold. The only thing that reaches one is the resident opening Ask My RA
+    # themselves, so this says what is true rather than claiming a message was sent.
     st.error(
-        f"You have {open_strikes} open strikes. Your RA has been notified. "
-        "Contesting one is the fastest way back."
+        f"You have {open_strikes} open strikes, which is RA-conversation territory. "
+        "Contest one, or raise it with your RA yourself."
     )
 elif open_strikes == STRIKE_LIMIT - 1:
     st.warning(

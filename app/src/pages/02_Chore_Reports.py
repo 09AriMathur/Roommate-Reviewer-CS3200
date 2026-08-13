@@ -38,19 +38,30 @@ today = date.today()
 cutoff = today - timedelta(days=14)
 
 dorm_name = None
-if user.get('RoomID'):
-    room = api_get(f"/room/rooms/{user['RoomID']}", quiet=True)
-    if room:
-        dorm = api_get(f"/dorm/dorms/{room['DormID']}", quiet=True)
-        dorm_name = (dorm or {}).get('Dorm_Name')
+if user.get('DormID') is not None:
+    dorm = api_get(f"/dorm/dorms/{user['DormID']}", quiet=True)
+    dorm_name = (dorm or {}).get('Dorm_Name')
 
-# A report has to name a task, so only tasks that aren't done yet are
-# reportable. Pulled per-member since assigned tasks are only exposed per-user.
+def is_reportable(task):
+    """A report says a chore was skipped, so it only makes sense once the deadline
+    has passed. A chore already marked missed qualifies whatever its due date says."""
+    if task['status'] == 'done':
+        return False
+    if task['status'] == 'missed':
+        return True
+    due = parsedate_to_datetime(task['due_date']).date() if task.get('due_date') else None
+    return due is not None and due < today
+
+
+# Only a roommate's chores are reportable -- never your own. The loop runs over
+# `roommates` rather than `group` for exactly that reason; `group` still backs the
+# reports list below, which is suite-wide and does include you.
+# Pulled per-member since assigned tasks are only exposed per-user.
 open_tasks = []
-for member in group:
+for member in roommates:
     member_tasks = (api_get(f"/user/users/{member['UserID']}/tasks/assigned", quiet=True)
                      or {}).get('assigned_tasks', [])
-    open_tasks.extend(t for t in member_tasks if t['status'] != 'done')
+    open_tasks.extend(t for t in member_tasks if is_reportable(t))
 
 # Drop stale tasks (no due date can't be judged as "old", so those stay) and
 # show the most recently due tasks first.
@@ -146,25 +157,36 @@ with new_report_col:
         st.subheader(f"New Report @ {draft_time.strftime('%b %d, %I:%M %p')}")
 
         if not open_tasks:
-            st.markdown(":gray[*Nothing to report — every task is done!*]")
+            # Both bounds matter: the server rejects a chore that isn't due yet, and
+            # this page only lists chores due within the last 14 days.
+            st.markdown(
+                ":gray[*Nothing to report. A chore is reportable in the two weeks "
+                "after its due date, and only your roommates' chores count.*]"
+            )
         else:
             selected_task = st.selectbox(
                 "Main Report",
                 options=open_tasks,
                 format_func=format_task_option,
-                help="Which task did you notice wasn't done?",
+                help="Which of your roommates' overdue chores wasn't done?",
             )
             details = st.text_area("Other details...", label_visibility="collapsed", placeholder="Other details...")
 
             if st.button("Create Report", type="primary", use_container_width=True):
-                status, _ = api_write("POST", "/room_report/room_reports", {
+                # 409 covers the rules the server owns: reporting yourself, reporting
+                # a chore that isn't due, and filing a second open report on one chore.
+                # The dropdown should already prevent all three, so if one comes back
+                # the data moved underneath us -- show what the API said.
+                status, body = api_write("POST", "/room_report/room_reports", {
                     "TaskID": selected_task['Task_ID'],
                     "UserID": USER_ID,
                     "Description": details or f"{selected_task['Task_Name']} was not completed.",
-                })
+                }, expected=(409,))
                 if status == 201:
                     st.session_state.pop('report_draft_time', None)
                     st.rerun()
+                elif status == 409:
+                    st.warning((body or {}).get("error", "That chore can't be reported."))
 
 with st.container(border=True):
     st.subheader("Reports This Week")

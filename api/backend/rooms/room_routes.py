@@ -5,6 +5,19 @@ from mysql.connector import Error
 # Create a Blueprint for Room routes
 rooms = Blueprint("rooms", __name__)
 
+# Rooms is a weak entity owned by Dorms: a room number only identifies a room within
+# its dorm, so every single-room route is addressed as /dorms/<dorm_id>/rooms/<number>
+# rather than by a surrogate id. That also means an RA can look a room up by the two
+# things they actually know -- the building and the number on the door.
+
+
+def _room_exists(cursor, dorm_id, room_number):
+    cursor.execute(
+        "SELECT 1 FROM Rooms WHERE DormID = %s AND Room_Number = %s",
+        (dorm_id, room_number),
+    )
+    return cursor.fetchone() is not None
+
 
 # Get all rooms, with optional filtering by dorm
 # Example: /rooms?dorm_id=1
@@ -23,6 +36,7 @@ def get_all_rooms():
             query += " AND DormID = %s"
             params.append(dorm_id)
 
+        query += " ORDER BY DormID, Room_Number"
         cursor.execute(query, params)
         room_list = cursor.fetchall()
 
@@ -36,12 +50,15 @@ def get_all_rooms():
 
 
 # Get detailed information about a specific room
-# Example: /rooms/1
-@rooms.route("/rooms/<int:room_id>", methods=["GET"])
-def get_room(room_id):
+# Example: /dorms/2/rooms/201
+@rooms.route("/dorms/<int:dorm_id>/rooms/<int:room_number>", methods=["GET"])
+def get_room(dorm_id, room_number):
     cursor = get_db().cursor(dictionary=True)
     try:
-        cursor.execute("SELECT * FROM Rooms WHERE RoomID = %s", (room_id,))
+        cursor.execute(
+            "SELECT * FROM Rooms WHERE DormID = %s AND Room_Number = %s",
+            (dorm_id, room_number),
+        )
         room = cursor.fetchone()
 
         if not room:
@@ -87,9 +104,14 @@ def create_room():
         ))
 
         get_db().commit()
-        return jsonify({"message": "Room created successfully", "room_id": cursor.lastrowid}), 201
+        # The key is the pair the caller supplied; there is no generated id to return.
+        return jsonify({
+            "message": "Room created successfully",
+            "DormID": data["DormID"],
+            "Room_Number": data["Room_Number"],
+        }), 201
     except Error as e:
-        if e.errno == 1062:  # duplicate entry on (DormID, Room_Number)
+        if e.errno == 1062:  # duplicate entry on the (DormID, Room_Number) key
             return jsonify({"error": "A room with that number already exists in this dorm"}), 409
         current_app.logger.error(f'Database error in create_room: {e}')
         return jsonify({"error": str(e)}), 500
@@ -98,40 +120,34 @@ def create_room():
 
 
 # Update an existing room's information
-# Can update DormID, Room_Number, and/or RA
-# Example: PUT /rooms/1 with JSON body containing fields to update
-@rooms.route("/rooms/<int:room_id>", methods=["PUT"])
-def update_room(room_id):
+# Only RA is updatable: DormID and Room_Number are the room's identity, and changing
+# them would mean renaming the key that Users and Rules point at.
+# Example: PUT /dorms/2/rooms/201 with JSON body containing fields to update
+@rooms.route("/dorms/<int:dorm_id>/rooms/<int:room_number>", methods=["PUT"])
+def update_room(dorm_id, room_number):
     cursor = get_db().cursor(dictionary=True)
     try:
         data = request.get_json()
 
-        cursor.execute("SELECT RoomID FROM Rooms WHERE RoomID = %s", (room_id,))
-        if not cursor.fetchone():
+        if not _room_exists(cursor, dorm_id, room_number):
             return jsonify({"error": "Room not found"}), 404
 
-        if "DormID" in data:
-            cursor.execute("SELECT DormID FROM Dorms WHERE DormID = %s", (data["DormID"],))
-            if not cursor.fetchone():
-                return jsonify({"error": "Dorm not found"}), 404
-
-        # Build update query dynamically based on provided fields
-        allowed_fields = ["DormID", "Room_Number", "RA"]
-        update_fields = [f"{f} = %s" for f in allowed_fields if f in data]
-        params = [data[f] for f in allowed_fields if f in data]
-
-        if not update_fields:
+        if "RA" not in data:
             return jsonify({"error": "No valid fields to update"}), 400
 
-        params.append(room_id)
-        query = f"UPDATE Rooms SET {', '.join(update_fields)} WHERE RoomID = %s"
-        cursor.execute(query, params)
+        if data["RA"] is not None:
+            cursor.execute("SELECT RA_ID FROM RAs WHERE RA_ID = %s", (data["RA"],))
+            if not cursor.fetchone():
+                return jsonify({"error": "RA not found"}), 404
+
+        cursor.execute(
+            "UPDATE Rooms SET RA = %s WHERE DormID = %s AND Room_Number = %s",
+            (data["RA"], dorm_id, room_number),
+        )
         get_db().commit()
 
         return jsonify({"message": "Room updated successfully"}), 200
     except Error as e:
-        if e.errno == 1062:
-            return jsonify({"error": "A room with that number already exists in this dorm"}), 409
         current_app.logger.error(f'Database error in update_room: {e}')
         return jsonify({"error": str(e)}), 500
     finally:
@@ -139,16 +155,18 @@ def update_room(room_id):
 
 
 # Get all rules associated with a specific room
-# Example: /rooms/1/rules
-@rooms.route("/rooms/<int:room_id>/rules", methods=["GET"])
-def get_room_rules(room_id):
+# Example: /dorms/2/rooms/201/rules
+@rooms.route("/dorms/<int:dorm_id>/rooms/<int:room_number>/rules", methods=["GET"])
+def get_room_rules(dorm_id, room_number):
     cursor = get_db().cursor(dictionary=True)
     try:
-        cursor.execute("SELECT RoomID FROM Rooms WHERE RoomID = %s", (room_id,))
-        if not cursor.fetchone():
+        if not _room_exists(cursor, dorm_id, room_number):
             return jsonify({"error": "Room not found"}), 404
 
-        cursor.execute("SELECT * FROM Rules WHERE RoomID = %s", (room_id,))
+        cursor.execute(
+            "SELECT * FROM Rules WHERE DormID = %s AND Room_Number = %s",
+            (dorm_id, room_number),
+        )
         return jsonify(cursor.fetchall()), 200
     except Error as e:
         current_app.logger.error(f'Database error in get_room_rules: {e}')
@@ -158,16 +176,18 @@ def get_room_rules(room_id):
 
 
 # Get all users assigned to a specific room
-# Example: /rooms/1/users
-@rooms.route("/rooms/<int:room_id>/users", methods=["GET"])
-def get_room_users(room_id):
+# Example: /dorms/2/rooms/201/users
+@rooms.route("/dorms/<int:dorm_id>/rooms/<int:room_number>/users", methods=["GET"])
+def get_room_users(dorm_id, room_number):
     cursor = get_db().cursor(dictionary=True)
     try:
-        cursor.execute("SELECT RoomID FROM Rooms WHERE RoomID = %s", (room_id,))
-        if not cursor.fetchone():
+        if not _room_exists(cursor, dorm_id, room_number):
             return jsonify({"error": "Room not found"}), 404
 
-        cursor.execute("SELECT * FROM Users WHERE RoomID = %s", (room_id,))
+        cursor.execute(
+            "SELECT * FROM Users WHERE DormID = %s AND Room_Number = %s",
+            (dorm_id, room_number),
+        )
         return jsonify(cursor.fetchall()), 200
     except Error as e:
         current_app.logger.error(f'Database error in get_room_users: {e}')
@@ -179,12 +199,15 @@ def get_room_users(room_id):
 # Get the RA assigned to a specific room.
 # Rooms.RA is a foreign key to RAs.RA_ID, so this just looks up that RA
 # directly rather than deriving it through Users.
-# Example: /rooms/1/ra
-@rooms.route("/rooms/<int:room_id>/ra", methods=["GET"])
-def get_room_ra(room_id):
+# Example: /dorms/2/rooms/201/ra
+@rooms.route("/dorms/<int:dorm_id>/rooms/<int:room_number>/ra", methods=["GET"])
+def get_room_ra(dorm_id, room_number):
     cursor = get_db().cursor(dictionary=True)
     try:
-        cursor.execute("SELECT RoomID, RA FROM Rooms WHERE RoomID = %s", (room_id,))
+        cursor.execute(
+            "SELECT RA FROM Rooms WHERE DormID = %s AND Room_Number = %s",
+            (dorm_id, room_number),
+        )
         room = cursor.fetchone()
 
         if not room:
@@ -196,8 +219,9 @@ def get_room_ra(room_id):
             ra = cursor.fetchone()
 
         return jsonify({
-            "room_id": room_id,
-            "ra": ra
+            "DormID": dorm_id,
+            "Room_Number": room_number,
+            "ra": ra,
         }), 200
     except Error as e:
         current_app.logger.error(f'Database error in get_room_ra: {e}')
@@ -216,7 +240,9 @@ def get_dorm_rooms(dorm_id):
         if not cursor.fetchone():
             return jsonify({"error": "Dorm not found"}), 404
 
-        cursor.execute("SELECT * FROM Rooms WHERE DormID = %s", (dorm_id,))
+        cursor.execute(
+            "SELECT * FROM Rooms WHERE DormID = %s ORDER BY Room_Number", (dorm_id,)
+        )
         return jsonify(cursor.fetchall()), 200
     except Error as e:
         current_app.logger.error(f'Database error in get_dorm_rooms: {e}')

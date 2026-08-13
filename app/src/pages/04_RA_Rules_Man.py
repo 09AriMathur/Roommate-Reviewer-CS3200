@@ -58,11 +58,14 @@ if ra is None:
     st.stop()
 
 dorm_names = {d["DormID"]: d["Dorm_Name"] for d in dorms}
-room_labels = {
-    r["RoomID"]: f"Room {r['Room_Number']} ({dorm_names.get(r['DormID'], 'Unknown')})"
-    for r in rooms
-}
-room_label_to_id = {label: room_id for room_id, label in room_labels.items()}
+
+# A room is keyed by its dorm and its number together, so the lookups key on that
+# pair rather than a single id.
+room_labels = {}
+for r in rooms:
+    dorm_label = dorm_names.get(r["DormID"], f"Dorm {r['DormID']}")
+    room_labels[(r["DormID"], r["Room_Number"])] = f"{dorm_label} {r['Room_Number']}"
+room_label_to_key = {label: key for key, label in room_labels.items()}
 
 st.write(f"#### Rules Created By {ra['First_Name']} {ra['Last_Name']}")
 
@@ -72,7 +75,7 @@ if my_rules:
     rule_rows = [{
         "Rule ID": r["RuleID"],
         "Description": r["Descr"],
-        "Room": room_labels.get(r["RoomID"], "Unassigned"),
+        "Room": room_labels.get((r["DormID"], r["Room_Number"]), "Unassigned"),
     } for r in my_rules]
     st.dataframe(pd.DataFrame(rule_rows), use_container_width=True, hide_index=True)
 else:
@@ -88,7 +91,7 @@ st.write('#### Add a New Rule')
 
 with st.form("add_rule_form", clear_on_submit=True):
     new_descr = st.text_area("Description")
-    new_room_label = st.selectbox("Room", list(room_label_to_id.keys()))
+    new_room_label = st.selectbox("Room", list(room_label_to_key.keys()))
     add_submitted = st.form_submit_button("Add Rule")
 
 if add_submitted:
@@ -97,7 +100,8 @@ if add_submitted:
     else:
         result = api_write("POST", "/rule/rules", {
             "Descr": new_descr.strip(),
-            "RoomID": room_label_to_id[new_room_label],
+            "DormID": room_label_to_key[new_room_label][0],
+            "Room_Number": room_label_to_key[new_room_label][1],
             "RA_ID": ra_id,
         })
         if result:
@@ -117,8 +121,9 @@ if my_rules:
     selected_label = st.selectbox("Select a rule", list(rule_options.keys()))
     selected_rule = rule_options[selected_label]
 
-    room_label_options = list(room_label_to_id.keys())
-    current_room_label = room_labels.get(selected_rule["RoomID"])
+    room_label_options = list(room_label_to_key.keys())
+    current_room_label = room_labels.get(
+        (selected_rule["DormID"], selected_rule["Room_Number"]))
     current_index = (
         room_label_options.index(current_room_label) if current_room_label in room_label_options else 0
     )
@@ -134,7 +139,8 @@ if my_rules:
         else:
             result = api_write("PUT", f"/rule/rules/{selected_rule['RuleID']}", {
                 "Descr": edited_descr.strip(),
-                "RoomID": room_label_to_id[edited_room_label],
+                "DormID": room_label_to_key[edited_room_label][0],
+                "Room_Number": room_label_to_key[edited_room_label][1],
             })
             if result:
                 st.success("Rule updated.")

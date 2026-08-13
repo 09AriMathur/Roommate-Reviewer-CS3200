@@ -70,8 +70,14 @@ def open_new_task_dialog():
         if status != 201:
             return
 
-        api_write("PUT", f"/task/tasks/{body['TaskID']}", {"Assigned_UserID": assignee_id})
-        st.rerun()
+        # POST creates the chore unassigned, so this PUT is what puts it on someone's
+        # list. Rerunning regardless would close the dialog on failure and wipe the
+        # error, leaving a chore that shows up in nobody's To do tab.
+        assign_status, _ = api_write(
+            "PUT", f"/task/tasks/{body['TaskID']}", {"Assigned_UserID": assignee_id}
+        )
+        if assign_status == 200:
+            st.rerun()
 
 
 title_col, new_task_col = st.columns([5, 1], vertical_alignment="bottom")
@@ -150,8 +156,13 @@ def ask_about(task):
             st.rerun()
 
 
-def render_task(task, actionable):
-    """One chore row. actionable rows can be completed or negotiated."""
+def render_task(task, can_complete=False, can_ask=False):
+    """One chore row.
+
+    The two permissions are separate because a missed chore is not completable --
+    it has already been marked down, and letting a resident quietly flip it to done
+    erases the record. Contesting it is the proper route, so Ask stays available.
+    """
     due = to_date(task.get('due_date'))
     overdue = due and due < today and task['status'] not in ('done', 'missed')
 
@@ -176,19 +187,20 @@ def render_task(task, actionable):
                                                  (task['status'], 'gray'))
                 st.badge(label, color=color)
 
-        if not actionable:
+        if not (can_complete or can_ask):
             return
 
         with action_col:
             done_col, ask_col = st.columns(2)
-            if done_col.button("Mark done", key=f"done_{task['Task_ID']}",
-                               use_container_width=True):
+            if can_complete and done_col.button(
+                    "Mark done", key=f"done_{task['Task_ID']}",
+                    use_container_width=True):
                 status, _ = api_write("PUT", f"/task/tasks/{task['Task_ID']}",
                                       {"Status": "done"})
                 if status == 200:
                     st.rerun()
-            if ask_col.button("Ask", key=f"ask_{task['Task_ID']}",
-                              use_container_width=True):
+            if can_ask and ask_col.button("Ask", key=f"ask_{task['Task_ID']}",
+                                          use_container_width=True):
                 ask_about(task)
 
 
@@ -203,7 +215,7 @@ with todo_tab:
     if not todo:
         st.success("Nothing outstanding. Enjoy it.")
     for task in sorted(todo, key=lambda t: to_date(t.get('due_date')) or date.max):
-        render_task(task, actionable=True)
+        render_task(task, can_complete=True, can_ask=True)
 
 with missed_tab:
     if not missed:
@@ -212,19 +224,21 @@ with missed_tab:
         st.caption(
             "A missed chore can still be contested if you think it was marked unfairly."
         )
+    # No Mark done here: the chore is already on the record, and quietly flipping it
+    # to done would erase a miss your roommates may have reported. Ask -> dispute.
     for task in sorted(missed, key=lambda t: to_date(t.get('due_date')) or date.max):
-        render_task(task, actionable=True)
+        render_task(task, can_ask=True)
 
 with done_tab:
     if not completed:
         st.caption("Nothing completed yet.")
     for task in sorted(completed, key=lambda t: to_date(t.get('due_date')) or date.max,
                        reverse=True):
-        render_task(task, actionable=False)
+        render_task(task)
 
 with created_tab:
     st.caption("Chores you set up, whoever ended up assigned to them.")
     if not created:
         st.caption("You haven't created any chores.")
     for task in sorted(created, key=lambda t: to_date(t.get('due_date')) or date.max):
-        render_task(task, actionable=False)
+        render_task(task)

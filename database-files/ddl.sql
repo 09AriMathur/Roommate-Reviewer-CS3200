@@ -26,15 +26,16 @@ CREATE TABLE RAs (
 );
 
 DROP TABLE IF EXISTS Rooms;
+-- Rooms is a weak entity: a room number only identifies a room within its dorm,
+-- so the dorm's key is part of the room's key rather than a plain reference.
 CREATE TABLE Rooms (
-    RoomID  	INT AUTO_INCREMENT PRIMARY KEY,
     DormID  	INT NOT NULL,
     Room_Number INT NOT NULL,
     RA      	INT,
+    PRIMARY KEY (DormID, Room_Number),
     FOREIGN KEY (DormID) REFERENCES Dorms(DormID)
         ON DELETE RESTRICT ON UPDATE CASCADE,
-    FOREIGN KEY (RA) REFERENCES RAs(RA_ID),
-    UNIQUE (DormID, Room_Number)
+    FOREIGN KEY (RA) REFERENCES RAs(RA_ID)
 );
 
 
@@ -45,11 +46,15 @@ CREATE TABLE Users (
     Last_Name   	VARCHAR(50)  NOT NULL,
     Email       	VARCHAR(255) NOT NULL UNIQUE,
     RA          	INT,
-    RoomID      	INT,
+    -- A room is identified by its dorm plus its number, so a resident's room
+    -- reference carries both halves of that key.
+    DormID      	INT,
+    Room_Number 	INT,
     TasksCompleted  INT NOT NULL DEFAULT 0,
     TasksMissed 	INT NOT NULL DEFAULT 0,
     FOREIGN KEY (RA) 	REFERENCES RAs(RA_ID)   ON DELETE SET NULL ON UPDATE CASCADE,
-    FOREIGN KEY (RoomID) REFERENCES Rooms(RoomID) ON DELETE SET NULL ON UPDATE CASCADE
+    FOREIGN KEY (DormID, Room_Number) REFERENCES Rooms(DormID, Room_Number)
+        ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 DROP TABLE IF EXISTS Requests;
@@ -140,10 +145,12 @@ CREATE TABLE Rules (
     UserID INT,
     Descr  TEXT NOT NULL,
     RA_ID  INT,
-    RoomID INT,
+    DormID INT,
+    Room_Number INT,
     FOREIGN KEY (UserID) REFERENCES Users(UserID) ON DELETE SET NULL ON UPDATE CASCADE,
     FOREIGN KEY (RA_ID)  REFERENCES RAs(RA_ID)   ON DELETE SET NULL ON UPDATE CASCADE,
-    FOREIGN KEY (RoomID) REFERENCES Rooms(RoomID) ON DELETE SET NULL ON UPDATE CASCADE
+    FOREIGN KEY (DormID, Room_Number) REFERENCES Rooms(DormID, Room_Number)
+        ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 
@@ -190,160 +197,160 @@ INSERT INTO RAs (RA_ID, First_Name, Last_Name, Email, Settled_Reqs, Settled_Reps
 (20, 'Emma', 'Clark', 'emma.clark@northeastern.edu', 7, 1);
 
 -- Mock Rooms generated with Mockaroo
-INSERT INTO Rooms (RoomID, DormID, Room_Number, RA) VALUES
-(1, 1, 101, 1),
-(2, 1, 102, 1),
-(3, 2, 201, 2),
-(4, 3, 305, 3),
-(5, 1, 120, 4),
-(6, 1, 420, 1),
-(7, 1, 312, 6),
-(8, 1, 118, 4),
-(9, 2, 204, 2),
-(10, 2, 318, 7),
-(11, 2, 407, 8),
-(12, 2, 107, 2),
-(13, 2, 216, 9),
-(14, 3, 206, 3),
-(15, 3, 112, 11),
-(16, 3, 214, 11),
-(17, 3, 320, 12),
-(18, 3, 104, 3),
-(19, 4, 206, 13),
-(20, 4, 417, 13),
-(21, 4, 108, 16),
-(22, 4, 314, 14),
-(23, 4, 308, 13),
-(24, 4, 407, 16),
-(25, 5, 203, 20),
-(26, 5, 402, 20),
-(27, 5, 207, 20),
-(28, 5, 213, 19),
-(29, 5, 215, 18),
-(30, 5, 309, 18);
+INSERT INTO Rooms (DormID, Room_Number, RA) VALUES
+(1, 101, 1),
+(1, 102, 1),
+(2, 201, 2),
+(3, 305, 3),
+(1, 120, 4),
+(1, 420, 1),
+(1, 312, 6),
+(1, 118, 4),
+(2, 204, 2),
+(2, 318, 7),
+(2, 407, 8),
+(2, 107, 2),
+(2, 216, 9),
+(3, 206, 3),
+(3, 112, 11),
+(3, 214, 11),
+(3, 320, 12),
+(3, 104, 3),
+(4, 206, 13),
+(4, 417, 13),
+(4, 108, 16),
+(4, 314, 14),
+(4, 308, 13),
+(4, 407, 16),
+(5, 203, 20),
+(5, 402, 20),
+(5, 207, 20),
+(5, 213, 19),
+(5, 215, 18),
+(5, 309, 18);
 
 -- Mock Users generated with Mockaroo
-INSERT INTO Users (UserID, First_Name, Last_Name, Email, RA, RoomID, TasksCompleted, TasksMissed) VALUES
-(1, 'Alice', 'Nguyen', 'alice.nguyen@northeastern.edu', 1, 1, 4, 0),
-(2, 'Bob', 'Smith', 'bob.smith@northeastern.edu', 1, 2, 2, 1),
-(3, 'Erin', 'Walsh', 'erin.walsh@northeastern.edu', 2, 3, 1, 2),
-(4, 'Frank', 'Osei', 'frank.osei@northeastern.edu', 2, 3, 0, 3),
-(5, 'Grace', 'Lin', 'grace.lin@northeastern.edu', 3, 4, 6, 0),
-(6, 'Aubrey', 'White', 'aubrey.white@northeastern.edu', 19, 28, 2, 3),
-(7, 'Wyatt', 'Nguyen', 'wyatt.nguyen@northeastern.edu', 2, 12, 3, 1),
-(8, 'Abigail', 'Robinson', 'abigail.robinson@northeastern.edu', 11, 16, 3, 2),
-(9, 'Christopher', 'Roberts', 'christopher.roberts@northeastern.edu', 4, 5, 4, 0),
-(10, 'Owen', 'Bailey', 'owen.bailey@northeastern.edu', 18, 29, 0, 1),
-(11, 'Nolan', 'Ali', 'nolan.ali@northeastern.edu', 13, 19, 7, 3),
-(12, 'Marcus', 'Clark', 'marcus.clark@northeastern.edu', 4, 8, 10, 4),
-(13, 'Jack', 'Chen', 'jack.chen@northeastern.edu', 11, 15, 3, 1),
-(14, 'Zoey', 'Choi', 'zoey.choi@northeastern.edu', 11, 15, 8, 0),
-(15, 'Charlotte', 'Richardson', 'charlotte.richardson@northeastern.edu', 20, 26, 9, 2),
-(16, 'Zoey', 'Bell', 'zoey.bell@northeastern.edu', 19, 28, 2, 1),
-(17, 'Addison', 'Mitchell', 'addison.mitchell@northeastern.edu', 11, 15, 1, 0),
-(18, 'Olivia', 'Walker', 'olivia.walker@northeastern.edu', 16, 24, 0, 3),
-(19, 'Lucas', 'Khan', 'lucas.khan@northeastern.edu', 19, 28, 8, 3),
-(20, 'Nathan', 'Davis', 'nathan.davis@northeastern.edu', 19, 28, 6, 0),
-(21, 'Gabriel', 'Scott', 'gabriel.scott@northeastern.edu', 20, 26, 6, 2),
-(22, 'Jordan', 'Peterson', 'jordan.peterson@northeastern.edu', 18, 29, 8, 0),
-(23, 'Yuki', 'Adams', 'yuki.adams@northeastern.edu', 13, 23, 9, 4),
-(24, 'Zara', 'Lewis', 'zara.lewis@northeastern.edu', 13, 23, 0, 3),
-(25, 'Ellie', 'Kumar', 'ellie.kumar@northeastern.edu', 11, 16, 0, 2),
-(26, 'Julian', 'Lee', 'julian.lee@northeastern.edu', 20, 26, 6, 0),
-(27, 'Jack', 'Ali', 'jack.ali@northeastern.edu', 2, 12, 6, 4),
-(28, 'Yuki', 'Perez', 'yuki.perez@northeastern.edu', 16, 21, 10, 3),
-(29, 'Lucas', 'Martin', 'lucas.martin@northeastern.edu', 3, 14, 1, 0),
-(30, 'Mia', 'Clark', 'mia.clark@northeastern.edu', 4, 5, 4, 4),
-(31, 'Nolan', 'Green', 'nolan.green@northeastern.edu', 20, 25, 1, 1),
-(32, 'Samantha', 'Wright', 'samantha.wright@northeastern.edu', 2, 12, 6, 2),
-(33, 'Ella', 'Baker', 'ella.baker@northeastern.edu', 4, 5, 3, 3),
-(34, 'Brayden', 'Green', 'brayden.green@northeastern.edu', 6, 7, 4, 0),
-(35, 'Jaxon', 'Baker', 'jaxon.baker@northeastern.edu', 8, 11, 10, 0),
-(36, 'Sofia', 'Khan', 'sofia.khan@northeastern.edu', 11, 15, 7, 1),
-(37, 'Priyanka', 'Hill', 'priyanka.hill@northeastern.edu', 20, 25, 4, 2),
-(38, 'Audrey', 'Reed', 'audrey.reed@northeastern.edu', 7, 10, 7, 2),
-(39, 'Deshawn', 'Campbell', 'deshawn.campbell@northeastern.edu', 20, 26, 7, 2),
-(40, 'Audrey', 'Diaz', 'audrey.diaz@northeastern.edu', 13, 19, 4, 4),
-(41, 'Audrey', 'Chen', 'audrey.chen@northeastern.edu', 1, 2, 2, 1),
-(42, 'Samara', 'Garcia', 'samara.garcia@northeastern.edu', 12, 17, 4, 0),
-(43, 'Joshua', 'Patel', 'joshua.patel@northeastern.edu', 4, 8, 5, 4),
-(44, 'Riley', 'Parker', 'riley.parker@northeastern.edu', 2, 12, 4, 2),
-(45, 'Colton', 'Taylor', 'colton.taylor@northeastern.edu', 13, 23, 2, 4),
-(46, 'Anthony', 'Wright', 'anthony.wright@northeastern.edu', 16, 21, 4, 3),
-(47, 'Camila', 'Cox', 'camila.cox@northeastern.edu', 13, 23, 7, 2),
-(48, 'Malik', 'Martinez', 'malik.martinez@northeastern.edu', 4, 5, 2, 1),
-(49, 'Olivia', 'King', 'olivia.king@northeastern.edu', 13, 20, 4, 3),
-(50, 'Malik', 'Roberts', 'malik.roberts@northeastern.edu', 2, 9, 10, 1),
-(51, 'Owen', 'Brooks', 'owen.brooks@northeastern.edu', 1, 1, 3, 4),
-(52, 'Natalie', 'Johnson', 'natalie.johnson@northeastern.edu', 7, 10, 2, 4),
-(53, 'Connor', 'Reed', 'connor.reed@northeastern.edu', 1, 1, 4, 2),
-(54, 'Henry', 'Rodriguez', 'henry.rodriguez@northeastern.edu', 16, 24, 8, 4),
-(55, 'Ethan', 'Singh', 'ethan.singh@northeastern.edu', 9, 13, 7, 4),
-(56, 'Joshua', 'Garcia', 'joshua.garcia@northeastern.edu', 18, 29, 2, 2),
-(57, 'Aria', 'Clark', 'aria.clark@northeastern.edu', 16, 21, 2, 4),
-(58, 'Charles', 'White', 'charles.white@northeastern.edu', 19, 28, 8, 2),
-(59, 'Penelope', 'Osei', 'penelope.osei@northeastern.edu', 12, 17, 5, 3),
-(60, 'Nadia', 'Richardson', 'nadia.richardson@northeastern.edu', 19, 28, 7, 1),
-(61, 'Gabriel', 'Thomas', 'gabriel.thomas@northeastern.edu', 19, 28, 8, 3),
-(62, 'Wyatt', 'Jackson', 'wyatt.jackson@northeastern.edu', 1, 6, 7, 3),
-(63, 'Ethan', 'Raman', 'ethan.raman@northeastern.edu', 1, 1, 10, 0),
-(64, 'Layla', 'Rogers', 'layla.rogers@northeastern.edu', 8, 11, 3, 2),
-(65, 'Anna', 'Howard', 'anna.howard@northeastern.edu', 6, 7, 3, 1),
-(66, 'Benjamin', 'Young', 'benjamin.young@northeastern.edu', 2, 9, 9, 0),
-(67, 'Miles', 'Kumar', 'miles.kumar@northeastern.edu', 16, 21, 3, 2),
-(68, 'Evelyn', 'Lin', 'evelyn.lin@northeastern.edu', 11, 16, 7, 4),
-(69, 'Marcus', 'Morgan', 'marcus.morgan@northeastern.edu', 18, 30, 10, 0),
-(70, 'Ethan', 'Khan', 'ethan.khan@northeastern.edu', 20, 27, 8, 1),
-(71, 'Levi', 'Perez', 'levi.perez@northeastern.edu', 16, 24, 3, 2),
-(72, 'Savannah', 'Thomas', 'savannah.thomas@northeastern.edu', 14, 22, 0, 3),
-(73, 'Leo', 'Clark', 'leo.clark@northeastern.edu', 16, 21, 1, 2),
-(74, 'Yuki', 'Clark', 'yuki.clark@northeastern.edu', 12, 17, 1, 2),
-(75, 'Sana', 'Walsh', 'sana.walsh@northeastern.edu', 3, 18, 8, 4),
-(76, 'Miles', 'Gomez', 'miles.gomez@northeastern.edu', 19, 28, 1, 0),
-(77, 'Layan', 'Lin', 'layan.lin@northeastern.edu', 11, 15, 9, 4),
-(78, 'Amir', 'Anderson', 'amir.anderson@northeastern.edu', 4, 8, 3, 2),
-(79, 'Lily', 'Young', 'lily.young@northeastern.edu', 20, 26, 2, 1),
-(80, 'Jack', 'Wright', 'jack.wright@northeastern.edu', 4, 8, 7, 1),
-(81, 'Nathan', 'White', 'nathan.white@northeastern.edu', 1, 2, 9, 2),
-(82, 'Harper', 'Ali', 'harper.ali@northeastern.edu', 3, 18, 4, 0),
-(83, 'Cameron', 'Torres', 'cameron.torres@northeastern.edu', 16, 24, 3, 0),
-(84, 'Layla', 'Kelly', 'layla.kelly@northeastern.edu', 18, 29, 2, 4),
-(85, 'Amir', 'Smith', 'amir.smith@northeastern.edu', 7, 10, 0, 1),
-(86, 'Sana', 'Carter', 'sana.carter@northeastern.edu', 4, 8, 3, 4),
-(87, 'Benjamin', 'King', 'benjamin.king@northeastern.edu', 20, 25, 9, 3),
-(88, 'Lucas', 'Edwards', 'lucas.edwards@northeastern.edu', 11, 15, 1, 4),
-(89, 'Aaron', 'Moore', 'aaron.moore@northeastern.edu', 18, 29, 0, 2),
-(90, 'Fatima', 'Martinez', 'fatima.martinez@northeastern.edu', 20, 26, 10, 0),
-(91, 'Camila', 'Cooper', 'camila.cooper@northeastern.edu', 6, 7, 7, 0),
-(92, 'Joshua', 'Jackson', 'joshua.jackson@northeastern.edu', 11, 15, 1, 3),
-(93, 'Charlotte', 'Lewis', 'charlotte.lewis@northeastern.edu', 6, 7, 1, 4),
-(94, 'Penelope', 'Lee', 'penelope.lee@northeastern.edu', 13, 19, 3, 4),
-(95, 'Henry', 'Baker', 'henry.baker@northeastern.edu', 11, 16, 4, 4),
-(96, 'Jack', 'Peterson', 'jack.peterson@northeastern.edu', 1, 1, 9, 3),
-(97, 'Emma', 'Nguyen', 'emma.nguyen@northeastern.edu', 19, 28, 1, 3),
-(98, 'Victoria', 'Turner', 'victoria.turner@northeastern.edu', 20, 25, 10, 1),
-(99, 'Sofia', 'Thomas', 'sofia.thomas@northeastern.edu', 13, 19, 10, 4),
-(100, 'Chloe', 'Brooks', 'chloe.brooks@northeastern.edu', 20, 25, 7, 0),
-(101, 'Christopher', 'Morgan', 'christopher.morgan@northeastern.edu', 2, 9, 6, 4),
-(102, 'Emily', 'Brown', 'emily.brown@northeastern.edu', 2, 9, 7, 1),
-(103, 'Sana', 'Kelly', 'sana.kelly@northeastern.edu', 8, 11, 8, 3),
-(104, 'Miles', 'Mitchell', 'miles.mitchell@northeastern.edu', 12, 17, 4, 2),
-(105, 'Eli', 'Osei', 'eli.osei@northeastern.edu', 2, 9, 8, 1),
-(106, 'Elena', 'Anderson', 'elena.anderson@northeastern.edu', 8, 11, 4, 4),
-(107, 'Deshawn', 'Osei', 'deshawn.osei@northeastern.edu', 12, 17, 4, 3),
-(108, 'Elena', 'Martin', 'elena.martin@northeastern.edu', 3, 4, 2, 3),
-(109, 'Sofia', 'Lee', 'sofia.lee@northeastern.edu', 1, 1, 5, 4),
-(110, 'Nathan', 'Torres', 'nathan.torres@northeastern.edu', 11, 16, 7, 1),
-(111, 'Ava', 'Green', 'ava.green@northeastern.edu', 1, 6, 1, 3),
-(112, 'Cameron', 'Edwards', 'cameron.edwards@northeastern.edu', 14, 22, 4, 0),
-(113, 'Julian', 'Robinson', 'julian.robinson@northeastern.edu', 18, 30, 7, 2),
-(114, 'Liam', 'Raman', 'liam.raman@northeastern.edu', 16, 21, 10, 4),
-(115, 'Zara', 'Roberts', 'zara.roberts@northeastern.edu', 20, 27, 2, 1),
-(116, 'Nolan', 'Collins', 'nolan.collins@northeastern.edu', 20, 25, 1, 1),
-(117, 'Isabella', 'Howard', 'isabella.howard@northeastern.edu', 6, 7, 4, 4),
-(118, 'Chloe', 'Diaz', 'chloe.diaz@northeastern.edu', 7, 10, 5, 4),
-(119, 'Fatima', 'Edwards', 'fatima.edwards@northeastern.edu', 11, 16, 1, 2),
-(120, 'Adrian', 'Richardson', 'adrian.richardson@northeastern.edu', 18, 30, 9, 1);
+INSERT INTO Users (UserID, First_Name, Last_Name, Email, RA, DormID, Room_Number, TasksCompleted, TasksMissed) VALUES
+(1, 'Alice', 'Nguyen', 'alice.nguyen@northeastern.edu', 1, 1, 101, 4, 0),
+(2, 'Bob', 'Smith', 'bob.smith@northeastern.edu', 1, 1, 102, 2, 1),
+(3, 'Erin', 'Walsh', 'erin.walsh@northeastern.edu', 2, 2, 201, 1, 2),
+(4, 'Frank', 'Osei', 'frank.osei@northeastern.edu', 2, 2, 201, 0, 3),
+(5, 'Grace', 'Lin', 'grace.lin@northeastern.edu', 3, 3, 305, 6, 0),
+(6, 'Aubrey', 'White', 'aubrey.white@northeastern.edu', 19, 5, 213, 2, 3),
+(7, 'Wyatt', 'Nguyen', 'wyatt.nguyen@northeastern.edu', 2, 2, 107, 3, 1),
+(8, 'Abigail', 'Robinson', 'abigail.robinson@northeastern.edu', 11, 3, 214, 3, 2),
+(9, 'Christopher', 'Roberts', 'christopher.roberts@northeastern.edu', 4, 1, 120, 4, 0),
+(10, 'Owen', 'Bailey', 'owen.bailey@northeastern.edu', 18, 5, 215, 0, 1),
+(11, 'Nolan', 'Ali', 'nolan.ali@northeastern.edu', 13, 4, 206, 7, 3),
+(12, 'Marcus', 'Clark', 'marcus.clark@northeastern.edu', 4, 1, 118, 10, 4),
+(13, 'Jack', 'Chen', 'jack.chen@northeastern.edu', 11, 3, 112, 3, 1),
+(14, 'Zoey', 'Choi', 'zoey.choi@northeastern.edu', 11, 3, 112, 8, 0),
+(15, 'Charlotte', 'Richardson', 'charlotte.richardson@northeastern.edu', 20, 5, 402, 9, 2),
+(16, 'Zoey', 'Bell', 'zoey.bell@northeastern.edu', 19, 5, 213, 2, 1),
+(17, 'Addison', 'Mitchell', 'addison.mitchell@northeastern.edu', 11, 3, 112, 1, 0),
+(18, 'Olivia', 'Walker', 'olivia.walker@northeastern.edu', 16, 4, 407, 0, 3),
+(19, 'Lucas', 'Khan', 'lucas.khan@northeastern.edu', 19, 5, 213, 8, 3),
+(20, 'Nathan', 'Davis', 'nathan.davis@northeastern.edu', 19, 5, 213, 6, 0),
+(21, 'Gabriel', 'Scott', 'gabriel.scott@northeastern.edu', 20, 5, 402, 6, 2),
+(22, 'Jordan', 'Peterson', 'jordan.peterson@northeastern.edu', 18, 5, 215, 8, 0),
+(23, 'Yuki', 'Adams', 'yuki.adams@northeastern.edu', 13, 4, 308, 9, 4),
+(24, 'Zara', 'Lewis', 'zara.lewis@northeastern.edu', 13, 4, 308, 0, 3),
+(25, 'Ellie', 'Kumar', 'ellie.kumar@northeastern.edu', 11, 3, 214, 0, 2),
+(26, 'Julian', 'Lee', 'julian.lee@northeastern.edu', 20, 5, 402, 6, 0),
+(27, 'Jack', 'Ali', 'jack.ali@northeastern.edu', 2, 2, 107, 6, 4),
+(28, 'Yuki', 'Perez', 'yuki.perez@northeastern.edu', 16, 4, 108, 10, 3),
+(29, 'Lucas', 'Martin', 'lucas.martin@northeastern.edu', 3, 3, 206, 1, 0),
+(30, 'Mia', 'Clark', 'mia.clark@northeastern.edu', 4, 1, 120, 4, 4),
+(31, 'Nolan', 'Green', 'nolan.green@northeastern.edu', 20, 5, 203, 1, 1),
+(32, 'Samantha', 'Wright', 'samantha.wright@northeastern.edu', 2, 2, 107, 6, 2),
+(33, 'Ella', 'Baker', 'ella.baker@northeastern.edu', 4, 1, 120, 3, 3),
+(34, 'Brayden', 'Green', 'brayden.green@northeastern.edu', 6, 1, 312, 4, 0),
+(35, 'Jaxon', 'Baker', 'jaxon.baker@northeastern.edu', 8, 2, 407, 10, 0),
+(36, 'Sofia', 'Khan', 'sofia.khan@northeastern.edu', 11, 3, 112, 7, 1),
+(37, 'Priyanka', 'Hill', 'priyanka.hill@northeastern.edu', 20, 5, 203, 4, 2),
+(38, 'Audrey', 'Reed', 'audrey.reed@northeastern.edu', 7, 2, 318, 7, 2),
+(39, 'Deshawn', 'Campbell', 'deshawn.campbell@northeastern.edu', 20, 5, 402, 7, 2),
+(40, 'Audrey', 'Diaz', 'audrey.diaz@northeastern.edu', 13, 4, 206, 4, 4),
+(41, 'Audrey', 'Chen', 'audrey.chen@northeastern.edu', 1, 1, 102, 2, 1),
+(42, 'Samara', 'Garcia', 'samara.garcia@northeastern.edu', 12, 3, 320, 4, 0),
+(43, 'Joshua', 'Patel', 'joshua.patel@northeastern.edu', 4, 1, 118, 5, 4),
+(44, 'Riley', 'Parker', 'riley.parker@northeastern.edu', 2, 2, 107, 4, 2),
+(45, 'Colton', 'Taylor', 'colton.taylor@northeastern.edu', 13, 4, 308, 2, 4),
+(46, 'Anthony', 'Wright', 'anthony.wright@northeastern.edu', 16, 4, 108, 4, 3),
+(47, 'Camila', 'Cox', 'camila.cox@northeastern.edu', 13, 4, 308, 7, 2),
+(48, 'Malik', 'Martinez', 'malik.martinez@northeastern.edu', 4, 1, 120, 2, 1),
+(49, 'Olivia', 'King', 'olivia.king@northeastern.edu', 13, 4, 417, 4, 3),
+(50, 'Malik', 'Roberts', 'malik.roberts@northeastern.edu', 2, 2, 204, 10, 1),
+(51, 'Owen', 'Brooks', 'owen.brooks@northeastern.edu', 1, 1, 101, 3, 4),
+(52, 'Natalie', 'Johnson', 'natalie.johnson@northeastern.edu', 7, 2, 318, 2, 4),
+(53, 'Connor', 'Reed', 'connor.reed@northeastern.edu', 1, 1, 101, 4, 2),
+(54, 'Henry', 'Rodriguez', 'henry.rodriguez@northeastern.edu', 16, 4, 407, 8, 4),
+(55, 'Ethan', 'Singh', 'ethan.singh@northeastern.edu', 9, 2, 216, 7, 4),
+(56, 'Joshua', 'Garcia', 'joshua.garcia@northeastern.edu', 18, 5, 215, 2, 2),
+(57, 'Aria', 'Clark', 'aria.clark@northeastern.edu', 16, 4, 108, 2, 4),
+(58, 'Charles', 'White', 'charles.white@northeastern.edu', 19, 5, 213, 8, 2),
+(59, 'Penelope', 'Osei', 'penelope.osei@northeastern.edu', 12, 3, 320, 5, 3),
+(60, 'Nadia', 'Richardson', 'nadia.richardson@northeastern.edu', 19, 5, 213, 7, 1),
+(61, 'Gabriel', 'Thomas', 'gabriel.thomas@northeastern.edu', 19, 5, 213, 8, 3),
+(62, 'Wyatt', 'Jackson', 'wyatt.jackson@northeastern.edu', 1, 1, 420, 7, 3),
+(63, 'Ethan', 'Raman', 'ethan.raman@northeastern.edu', 1, 1, 101, 10, 0),
+(64, 'Layla', 'Rogers', 'layla.rogers@northeastern.edu', 8, 2, 407, 3, 2),
+(65, 'Anna', 'Howard', 'anna.howard@northeastern.edu', 6, 1, 312, 3, 1),
+(66, 'Benjamin', 'Young', 'benjamin.young@northeastern.edu', 2, 2, 204, 9, 0),
+(67, 'Miles', 'Kumar', 'miles.kumar@northeastern.edu', 16, 4, 108, 3, 2),
+(68, 'Evelyn', 'Lin', 'evelyn.lin@northeastern.edu', 11, 3, 214, 7, 4),
+(69, 'Marcus', 'Morgan', 'marcus.morgan@northeastern.edu', 18, 5, 309, 10, 0),
+(70, 'Ethan', 'Khan', 'ethan.khan@northeastern.edu', 20, 5, 207, 8, 1),
+(71, 'Levi', 'Perez', 'levi.perez@northeastern.edu', 16, 4, 407, 3, 2),
+(72, 'Savannah', 'Thomas', 'savannah.thomas@northeastern.edu', 14, 4, 314, 0, 3),
+(73, 'Leo', 'Clark', 'leo.clark@northeastern.edu', 16, 4, 108, 1, 2),
+(74, 'Yuki', 'Clark', 'yuki.clark@northeastern.edu', 12, 3, 320, 1, 2),
+(75, 'Sana', 'Walsh', 'sana.walsh@northeastern.edu', 3, 3, 104, 8, 4),
+(76, 'Miles', 'Gomez', 'miles.gomez@northeastern.edu', 19, 5, 213, 1, 0),
+(77, 'Layan', 'Lin', 'layan.lin@northeastern.edu', 11, 3, 112, 9, 4),
+(78, 'Amir', 'Anderson', 'amir.anderson@northeastern.edu', 4, 1, 118, 3, 2),
+(79, 'Lily', 'Young', 'lily.young@northeastern.edu', 20, 5, 402, 2, 1),
+(80, 'Jack', 'Wright', 'jack.wright@northeastern.edu', 4, 1, 118, 7, 1),
+(81, 'Nathan', 'White', 'nathan.white@northeastern.edu', 1, 1, 102, 9, 2),
+(82, 'Harper', 'Ali', 'harper.ali@northeastern.edu', 3, 3, 104, 4, 0),
+(83, 'Cameron', 'Torres', 'cameron.torres@northeastern.edu', 16, 4, 407, 3, 0),
+(84, 'Layla', 'Kelly', 'layla.kelly@northeastern.edu', 18, 5, 215, 2, 4),
+(85, 'Amir', 'Smith', 'amir.smith@northeastern.edu', 7, 2, 318, 0, 1),
+(86, 'Sana', 'Carter', 'sana.carter@northeastern.edu', 4, 1, 118, 3, 4),
+(87, 'Benjamin', 'King', 'benjamin.king@northeastern.edu', 20, 5, 203, 9, 3),
+(88, 'Lucas', 'Edwards', 'lucas.edwards@northeastern.edu', 11, 3, 112, 1, 4),
+(89, 'Aaron', 'Moore', 'aaron.moore@northeastern.edu', 18, 5, 215, 0, 2),
+(90, 'Fatima', 'Martinez', 'fatima.martinez@northeastern.edu', 20, 5, 402, 10, 0),
+(91, 'Camila', 'Cooper', 'camila.cooper@northeastern.edu', 6, 1, 312, 7, 0),
+(92, 'Joshua', 'Jackson', 'joshua.jackson@northeastern.edu', 11, 3, 112, 1, 3),
+(93, 'Charlotte', 'Lewis', 'charlotte.lewis@northeastern.edu', 6, 1, 312, 1, 4),
+(94, 'Penelope', 'Lee', 'penelope.lee@northeastern.edu', 13, 4, 206, 3, 4),
+(95, 'Henry', 'Baker', 'henry.baker@northeastern.edu', 11, 3, 214, 4, 4),
+(96, 'Jack', 'Peterson', 'jack.peterson@northeastern.edu', 1, 1, 101, 9, 3),
+(97, 'Emma', 'Nguyen', 'emma.nguyen@northeastern.edu', 19, 5, 213, 1, 3),
+(98, 'Victoria', 'Turner', 'victoria.turner@northeastern.edu', 20, 5, 203, 10, 1),
+(99, 'Sofia', 'Thomas', 'sofia.thomas@northeastern.edu', 13, 4, 206, 10, 4),
+(100, 'Chloe', 'Brooks', 'chloe.brooks@northeastern.edu', 20, 5, 203, 7, 0),
+(101, 'Christopher', 'Morgan', 'christopher.morgan@northeastern.edu', 2, 2, 204, 6, 4),
+(102, 'Emily', 'Brown', 'emily.brown@northeastern.edu', 2, 2, 204, 7, 1),
+(103, 'Sana', 'Kelly', 'sana.kelly@northeastern.edu', 8, 2, 407, 8, 3),
+(104, 'Miles', 'Mitchell', 'miles.mitchell@northeastern.edu', 12, 3, 320, 4, 2),
+(105, 'Eli', 'Osei', 'eli.osei@northeastern.edu', 2, 2, 204, 8, 1),
+(106, 'Elena', 'Anderson', 'elena.anderson@northeastern.edu', 8, 2, 407, 4, 4),
+(107, 'Deshawn', 'Osei', 'deshawn.osei@northeastern.edu', 12, 3, 320, 4, 3),
+(108, 'Elena', 'Martin', 'elena.martin@northeastern.edu', 3, 3, 305, 2, 3),
+(109, 'Sofia', 'Lee', 'sofia.lee@northeastern.edu', 1, 1, 101, 5, 4),
+(110, 'Nathan', 'Torres', 'nathan.torres@northeastern.edu', 11, 3, 214, 7, 1),
+(111, 'Ava', 'Green', 'ava.green@northeastern.edu', 1, 1, 420, 1, 3),
+(112, 'Cameron', 'Edwards', 'cameron.edwards@northeastern.edu', 14, 4, 314, 4, 0),
+(113, 'Julian', 'Robinson', 'julian.robinson@northeastern.edu', 18, 5, 309, 7, 2),
+(114, 'Liam', 'Raman', 'liam.raman@northeastern.edu', 16, 4, 108, 10, 4),
+(115, 'Zara', 'Roberts', 'zara.roberts@northeastern.edu', 20, 5, 207, 2, 1),
+(116, 'Nolan', 'Collins', 'nolan.collins@northeastern.edu', 20, 5, 203, 1, 1),
+(117, 'Isabella', 'Howard', 'isabella.howard@northeastern.edu', 6, 1, 312, 4, 4),
+(118, 'Chloe', 'Diaz', 'chloe.diaz@northeastern.edu', 7, 2, 318, 5, 4),
+(119, 'Fatima', 'Edwards', 'fatima.edwards@northeastern.edu', 11, 3, 214, 1, 2),
+(120, 'Adrian', 'Richardson', 'adrian.richardson@northeastern.edu', 18, 5, 309, 9, 1);
 
 INSERT INTO Requests (Request_ID, Status, Reason, Request_Type, Created_At, Proposed_Due_Date, Task_ID, Requested_By_UserID) VALUES
 (1, 'resolved',    'Bathroom sink has been leaking since Friday.',      'maintenance', '2026-08-01 08:45:00', '2026-08-15', NULL, 2),
@@ -362,7 +369,17 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 -- work with -- a strike is an open report about a task assigned to you.
 (5, 'Take out trash',             '2026-07-18 09:00:00', '2026-07-20', 'missed',      3, 4, NULL),
 (6, 'Wipe down counters',         '2026-06-13 18:30:00', '2026-06-15', 'missed',      1, 4, NULL),
-(7, 'Clean the microwave',        '2026-07-02 12:00:00', '2026-07-04', 'missed',      3, 4, NULL);
+(7, 'Clean the microwave',        '2026-07-02 12:00:00', '2026-07-04', 'missed',      3, 4, NULL),
+-- Erin Walsh (UserID 3) shares South Hall 201 with Frank and carries TasksCompleted = 1 /
+-- TasksMissed = 2, but had no tasks at all, so those counters matched nothing either.
+-- The first three make her 33.3% completion rate add up. The fourth is deliberately
+-- overdue and still open: a resident may only report a *roommate's* chore, and only
+-- once its due date has passed, so without it Frank has nothing he is allowed to
+-- report and the Chore Reports page cannot be demonstrated from his account.
+(222, 'Scrub the shower',         '2026-06-20 10:00:00', '2026-06-24', 'done',        3, 3, NULL),
+(223, 'Take out compost',         '2026-07-08 08:30:00', '2026-07-11', 'missed',      4, 3, NULL),
+(224, 'Sweep the entryway',       '2026-07-26 16:00:00', '2026-07-29', 'missed',      3, 3, NULL),
+(225, 'Clean the bathroom mirror','2026-08-05 09:15:00', '2026-08-09', 'todo',        4, 3, NULL);
 
 -- Mock Tasks generated with Mockaroo (1-3 per user for UserID 6-120; UserID 1-5 keep the hand-authored story tasks above)
 INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_UserID, Assigned_UserID, Request_ID) VALUES
@@ -581,6 +598,24 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 (220, 'Take out compost', '2026-06-05 17:51:00', '2026-06-10', 'done', 119, 119, NULL),
 (221, 'Clean shared bathroom', '2026-08-01 19:51:00', '2026-08-08', 'done', 120, 120, NULL);
 
+-- Users.TasksCompleted / TasksMissed are denormalized counters, and every completion
+-- percentage in the app is derived from them rather than from Tasks. Mockaroo generated
+-- the counters and the task rows independently, so 116 of the 120 users disagreed with
+-- their own task list -- one user showed 8 completed against 2 actual tasks. Recompute
+-- them from Tasks here, once, so the seed starts truthful. PUT and DELETE on
+-- /task/tasks/<id> keep them in step from then on.
+UPDATE Users u
+LEFT JOIN (
+    SELECT Assigned_UserID          AS uid,
+           SUM(status = 'done')     AS done,
+           SUM(status = 'missed')   AS missed
+    FROM Tasks
+    WHERE Assigned_UserID IS NOT NULL
+    GROUP BY Assigned_UserID
+) t ON t.uid = u.UserID
+SET u.TasksCompleted = COALESCE(t.done, 0),
+    u.TasksMissed    = COALESCE(t.missed, 0);
+
 UPDATE Requests SET Task_ID = 1 WHERE Request_ID = 1;
 UPDATE Requests SET Task_ID = 2 WHERE Request_ID = 2;
 UPDATE Requests SET Task_ID = 3 WHERE Request_ID = 3;
@@ -588,7 +623,7 @@ UPDATE Requests SET Task_ID = 3 WHERE Request_ID = 3;
 -- Requests using Persona 3 (Ronny RuleBreaker) vocabulary: extension / dispute /
 -- expunction / swap. Inserted after Tasks so Task_ID can be set directly rather
 -- than backfilled. Frank Osei (UserID 4, 0 completed / 3 missed) is the Ronny
--- stand-in; Erin Walsh (3) shares RoomID 3 with him.
+-- stand-in; Erin Walsh (3) shares South Hall 201 with him.
 -- Requests 7, 8 and 10 carry Task_ID = NULL: a dispute challenges a report and an
 -- expunction challenges a strike, so neither points at a task. Those rows are
 -- traceable to a person only through Requested_By_UserID.
@@ -947,40 +982,40 @@ INSERT INTO Logs (Log_Id, UserId, `Timestamp`, `Action`, ReviewerID) VALUES
 (109, 19, '2026-08-16 13:37:00', 'Flagged for missed chore assignment', 5),
 (110, 31, '2026-07-02 13:11:00', 'Filed a room report', NULL);
 
-INSERT INTO Rules (RuleID, UserID, Descr, RA_ID, RoomID) VALUES
-(1, 1, 'Quiet hours begin at 10:00 PM on weeknights.',              1, 1),
-(2, 3, 'No overnight guests without roommate approval.',            2, 3),
-(3, 5, 'Dishes must be washed the same day they are used.',         3, 4);
+INSERT INTO Rules (RuleID, UserID, Descr, RA_ID, DormID, Room_Number) VALUES
+(1, 1, 'Quiet hours begin at 10:00 PM on weeknights.', 1, 1, 101),
+(2, 3, 'No overnight guests without roommate approval.', 2, 2, 201),
+(3, 5, 'Dishes must be washed the same day they are used.', 3, 3, 305);
 
 -- Mock Rules generated with Mockaroo (RuleID 1-3 are the hand-authored story rows above)
-INSERT INTO Rules (RuleID, UserID, Descr, RA_ID, RoomID) VALUES
-(4, 110, 'Noise complaints should be reported to the RA, not other residents.', 11, 16),
-(5, NULL, 'Shared fridge items must be labeled with your name.', 4, 8),
-(6, NULL, 'Shared fridge items must be labeled with your name.', 1, 1),
-(7, 29, 'Noise complaints should be reported to the RA, not other residents.', 3, 14),
-(8, 3, 'Trash must be taken out by Sunday night each week.', 2, 3),
-(9, 120, 'Candles and open flames are not permitted in rooms.', 18, 30),
-(10, 85, 'Quiet hours begin at 10:00 PM on weeknights.', 7, 10),
-(11, 21, 'Shared bathroom must be cleaned on a rotating weekly schedule.', 20, 26),
-(12, 49, 'Quiet hours begin at 10:00 PM on weeknights.', 13, 20),
-(13, 94, 'Shared fridge items must be labeled with your name.', 13, 19),
-(14, 87, 'Guests must sign in at the front desk after 9 PM.', 20, 25),
-(15, 117, 'Shared fridge items must be labeled with your name.', 6, 7),
-(16, 70, 'Common room furniture may not be moved without RA approval.', 20, 27),
-(17, 83, 'Dishes must be washed the same day they are used.', 16, 24),
-(18, 30, 'Noise complaints should be reported to the RA, not other residents.', 4, 5),
-(19, 23, 'No overnight guests without roommate approval.', 13, 23),
-(20, 58, 'No smoking or vaping anywhere in the building.', 19, 28),
-(21, NULL, 'Quiet hours begin at 10:00 PM on weeknights.', 3, 18),
-(22, 92, 'Guests must sign in at the front desk after 9 PM.', 11, 15),
-(23, NULL, 'Shared bathroom must be cleaned on a rotating weekly schedule.', 2, 12),
-(24, 41, 'Shared bathroom must be cleaned on a rotating weekly schedule.', 1, 2),
-(25, NULL, 'Noise complaints should be reported to the RA, not other residents.', 12, 17),
-(26, 5, 'Quiet hours begin at 10:00 PM on weeknights.', 3, 4),
-(27, 89, 'Quiet hours begin at 10:00 PM on weeknights.', 18, 29),
-(28, 62, 'Dishes must be washed the same day they are used.', 1, 6),
-(29, 55, 'Quiet hours begin at 10:00 PM on weeknights.', 9, 13),
-(30, 64, 'Dishes must be washed the same day they are used.', 8, 11),
-(31, 112, 'Shared bathroom must be cleaned on a rotating weekly schedule.', 14, 22),
-(32, 101, 'No overnight guests without roommate approval.', 2, 9),
-(33, 28, 'Noise complaints should be reported to the RA, not other residents.', 16, 21);
+INSERT INTO Rules (RuleID, UserID, Descr, RA_ID, DormID, Room_Number) VALUES
+(4, 110, 'Noise complaints should be reported to the RA, not other residents.', 11, 3, 214),
+(5, NULL, 'Shared fridge items must be labeled with your name.', 4, 1, 118),
+(6, NULL, 'Shared fridge items must be labeled with your name.', 1, 1, 101),
+(7, 29, 'Noise complaints should be reported to the RA, not other residents.', 3, 3, 206),
+(8, 3, 'Trash must be taken out by Sunday night each week.', 2, 2, 201),
+(9, 120, 'Candles and open flames are not permitted in rooms.', 18, 5, 309),
+(10, 85, 'Quiet hours begin at 10:00 PM on weeknights.', 7, 2, 318),
+(11, 21, 'Shared bathroom must be cleaned on a rotating weekly schedule.', 20, 5, 402),
+(12, 49, 'Quiet hours begin at 10:00 PM on weeknights.', 13, 4, 417),
+(13, 94, 'Shared fridge items must be labeled with your name.', 13, 4, 206),
+(14, 87, 'Guests must sign in at the front desk after 9 PM.', 20, 5, 203),
+(15, 117, 'Shared fridge items must be labeled with your name.', 6, 1, 312),
+(16, 70, 'Common room furniture may not be moved without RA approval.', 20, 5, 207),
+(17, 83, 'Dishes must be washed the same day they are used.', 16, 4, 407),
+(18, 30, 'Noise complaints should be reported to the RA, not other residents.', 4, 1, 120),
+(19, 23, 'No overnight guests without roommate approval.', 13, 4, 308),
+(20, 58, 'No smoking or vaping anywhere in the building.', 19, 5, 213),
+(21, NULL, 'Quiet hours begin at 10:00 PM on weeknights.', 3, 3, 104),
+(22, 92, 'Guests must sign in at the front desk after 9 PM.', 11, 3, 112),
+(23, NULL, 'Shared bathroom must be cleaned on a rotating weekly schedule.', 2, 2, 107),
+(24, 41, 'Shared bathroom must be cleaned on a rotating weekly schedule.', 1, 1, 102),
+(25, NULL, 'Noise complaints should be reported to the RA, not other residents.', 12, 3, 320),
+(26, 5, 'Quiet hours begin at 10:00 PM on weeknights.', 3, 3, 305),
+(27, 89, 'Quiet hours begin at 10:00 PM on weeknights.', 18, 5, 215),
+(28, 62, 'Dishes must be washed the same day they are used.', 1, 1, 420),
+(29, 55, 'Quiet hours begin at 10:00 PM on weeknights.', 9, 2, 216),
+(30, 64, 'Dishes must be washed the same day they are used.', 8, 2, 407),
+(31, 112, 'Shared bathroom must be cleaned on a rotating weekly schedule.', 14, 4, 314),
+(32, 101, 'No overnight guests without roommate approval.', 2, 2, 204),
+(33, 28, 'Noise complaints should be reported to the RA, not other residents.', 16, 4, 108);

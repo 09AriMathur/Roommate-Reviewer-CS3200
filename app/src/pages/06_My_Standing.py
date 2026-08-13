@@ -45,7 +45,8 @@ if standing is None:
 open_strikes = standing.get('open_strikes', 0)
 completion = standing.get('completion_pct')
 suite_avg = standing.get('suite_avg_pct')
-room_id = standing.get('RoomID')
+dorm_id = standing.get('DormID')
+room_number = standing.get('Room_Number')
 today = date.today()
 
 # The side panel holds a fixed width and stays against the right edge. The main column
@@ -74,7 +75,10 @@ with main:
 
     remaining = STRIKE_LIMIT - open_strikes
     if remaining <= 0:
-        st.error("Your RA has been notified. Contesting a strike is the way back.")
+        # Nothing here notifies an RA -- the only path to one is the resident opening
+        # Ask My RA. The strike-track label above says "RA notified" as the name of
+        # the third step, not as a claim that a message went out.
+        st.error("This is RA-conversation territory. Contesting a strike is the way back.")
     elif remaining == 1:
         st.warning("One more open report and this goes to your RA.")
     else:
@@ -267,14 +271,17 @@ with side:
             f"{to_date(period['End_Date']).strftime('%b %d')}"
         )
 
-    if room_id:
-        ra = (api_get(f"/room/rooms/{room_id}/ra", quiet=True) or {}).get('ra')
+    if dorm_id is not None and room_number is not None:
+        ra = (api_get(f"/room/dorms/{dorm_id}/rooms/{room_number}/ra",
+                      quiet=True) or {}).get('ra')
         if ra:
             st.write("### Who gets notified")
             st.write(f"{ra['First_Name']} {ra['Last_Name']}")
             st.caption(ra['Email'])
 
-        rules = api_get("/rule/rules", params={"room_id": room_id}, quiet=True) or []
+        rules = api_get("/rule/rules",
+                        params={"dorm_id": dorm_id, "room_number": room_number},
+                        quiet=True) or []
         if rules:
             with st.expander(f"House rules ({len(rules)})"):
                 for rule in rules:

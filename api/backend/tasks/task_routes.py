@@ -62,6 +62,40 @@ def create_new_task():
     finally:
         cursor.close()
 
+# Users.TasksCompleted / TasksMissed are denormalized counters, and the completion
+# percentage on the resident dashboards is derived entirely from them. Only a finished
+# task counts, so 'todo' and 'in_progress' map to nothing.
+COUNTER_FOR_STATUS = {"done": "TasksCompleted", "missed": "TasksMissed"}
+
+
+def _apply_counter_change(cursor, before_status, before_user, after_status, after_user):
+    """Keep the two counters in step with a task's status and assignee.
+
+    Both halves matter. Changing status moves a task between counters; changing
+    assignee moves a finished task's count from one resident to another. Handling
+    them together also covers the case where both change at once.
+    """
+    old_column = COUNTER_FOR_STATUS.get(before_status)
+    new_column = COUNTER_FOR_STATUS.get(after_status)
+
+    if (old_column, before_user) == (new_column, after_user):
+        return
+
+    # GREATEST guards against ever driving a counter negative -- the seed values were
+    # generated independently of the task rows, so they cannot be assumed accurate.
+    if old_column and before_user is not None:
+        cursor.execute(
+            f"UPDATE Users SET {old_column} = GREATEST({old_column} - 1, 0) "
+            "WHERE UserID = %s",
+            (before_user,),
+        )
+    if new_column and after_user is not None:
+        cursor.execute(
+            f"UPDATE Users SET {new_column} = {new_column} + 1 WHERE UserID = %s",
+            (after_user,),
+        )
+
+
 # Update an existing task
 @tasks.route("/tasks/<task_id>", methods=["PUT"])
 def update_task(task_id):
@@ -69,7 +103,10 @@ def update_task(task_id):
     try:
         data = request.get_json()
 
-        cursor.execute("SELECT Task_ID FROM Tasks WHERE Task_ID = %s", (task_id,))
+        cursor.execute(
+            "SELECT Task_ID, status, Assigned_UserID FROM Tasks WHERE Task_ID = %s",
+            (task_id,),
+        )
         task = cursor.fetchone()
         if not task:
             return jsonify({"error": "Task not found"}), 404
@@ -89,6 +126,19 @@ def update_task(task_id):
         params.append(task_id)
         query = f"UPDATE Tasks SET {', '.join(update_fields)} WHERE Task_ID = %s"
         cursor.execute(query, params)
+
+        # Marking a chore done has to move the resident's completion rate, which is
+        # what the counters feed. Done in the same transaction as the task update so
+        # the two cannot drift apart.
+        _apply_counter_change(
+            cursor,
+            task["status"],
+            task["Assigned_UserID"],
+            data.get("Status", task["status"]),
+            data["Assigned_UserID"] if "Assigned_UserID" in data
+            else task["Assigned_UserID"],
+        )
+
         get_db().commit()
 
         return jsonify({"message": "Task updated successfully"}), 200
@@ -102,13 +152,23 @@ def update_task(task_id):
 def delete_task(task_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        cursor.execute("SELECT Task_ID FROM Tasks WHERE Task_ID = %s", (task_id,))
+        cursor.execute(
+            "SELECT Task_ID, status, Assigned_UserID FROM Tasks WHERE Task_ID = %s",
+            (task_id,),
+        )
         task = cursor.fetchone()
 
         if not task:
             return jsonify({"error": "Task not found"}), 404
 
         cursor.execute("DELETE FROM Tasks WHERE Task_ID = %s", (task_id,))
+
+        # Deleting a finished chore has to give back the count it contributed, or the
+        # resident keeps credit for a task that no longer exists.
+        _apply_counter_change(
+            cursor, task["status"], task["Assigned_UserID"], None, None
+        )
+
         get_db().commit()
 
         return jsonify({"message": "Task deleted successfully"}), 200

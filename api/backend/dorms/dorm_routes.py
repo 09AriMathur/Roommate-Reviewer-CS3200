@@ -77,7 +77,7 @@ def get_dorm_stats(dorm_id):
         query = """
                     SELECT COUNT(*) AS total
                     FROM Users u
-                    JOIN Rooms rm ON u.RoomID = rm.RoomID
+                    JOIN Rooms rm ON u.DormID = rm.DormID AND u.Room_Number = rm.Room_Number
                     WHERE rm.DormID = %s
                 """
         cursor.execute(query, (dorm_id,))
@@ -90,7 +90,7 @@ def get_dorm_stats(dorm_id):
                            SUM(rq.Status = 'open') AS open_total
                     FROM Requests rq
                     JOIN Users u  ON rq.Requested_By_UserID = u.UserID
-                    JOIN Rooms rm ON u.RoomID = rm.RoomID
+                    JOIN Rooms rm ON u.DormID = rm.DormID AND u.Room_Number = rm.Room_Number
                     WHERE rm.DormID = %s
                 """
         cursor.execute(query, (dorm_id,))
@@ -101,7 +101,7 @@ def get_dorm_stats(dorm_id):
                            SUM(rp.Status = 'open') AS open_total
                     FROM Room_Reports rp
                     JOIN Users u  ON rp.UserID = u.UserID
-                    JOIN Rooms rm ON u.RoomID = rm.RoomID
+                    JOIN Rooms rm ON u.DormID = rm.DormID AND u.Room_Number = rm.Room_Number
                     WHERE rm.DormID = %s
                 """
         cursor.execute(query, (dorm_id,))
@@ -110,16 +110,16 @@ def get_dorm_stats(dorm_id):
         # COUNT(DISTINCT ...) because joining both Room_Reports and Requests to the same
         # users fans the rows out; a plain COUNT would multiply the two together
         query = """
-                    SELECT rm.RoomID,
+                    SELECT rm.DormID,
                            rm.Room_Number,
                            COUNT(DISTINCT rp.ReportID)   AS report_count,
                            COUNT(DISTINCT rq.Request_ID) AS request_count
                     FROM Rooms rm
-                    LEFT JOIN Users u        ON u.RoomID = rm.RoomID
+                    LEFT JOIN Users u        ON u.DormID = rm.DormID AND u.Room_Number = rm.Room_Number
                     LEFT JOIN Room_Reports rp ON rp.UserID = u.UserID
                     LEFT JOIN Requests rq     ON rq.Requested_By_UserID = u.UserID
                     WHERE rm.DormID = %s
-                    GROUP BY rm.RoomID, rm.Room_Number
+                    GROUP BY rm.DormID, rm.Room_Number
                     ORDER BY report_count DESC, request_count DESC
                 """
         cursor.execute(query, (dorm_id,))
@@ -156,9 +156,9 @@ def get_dorm_users(dorm_id):
 
         query = """
                     SELECT u.UserID, u.First_Name, u.Last_Name, u.Email,
-                           u.RoomID, rm.Room_Number, u.TasksCompleted, u.TasksMissed
+                           u.DormID, u.Room_Number, u.TasksCompleted, u.TasksMissed
                     FROM Users u
-                    JOIN Rooms rm ON u.RoomID = rm.RoomID
+                    JOIN Rooms rm ON u.DormID = rm.DormID AND u.Room_Number = rm.Room_Number
                     WHERE rm.DormID = %s
                     ORDER BY rm.Room_Number, u.UserID
                 """

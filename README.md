@@ -1,70 +1,108 @@
-# Summer B 2026 CS 3200 Project Template
+# Roommate Reviewer
 
-This is a template repo for Dr. Fontenot's Summer B 2026 CS 3200 Course Project.
+A chore tracking and accountability app for shared dorm rooms.
 
-It includes most of the infrastructure setup (containers), sample databases, and example UI pages. Explore it fully and ask questions!
+**Team:** Aryaman Mathur · Hutch Turner · Nathan Rabe · Phone Kyaw
+CS 3200 — Database Design — Summer B 2026
 
-## Prerequisites
+**Demo video:** _TODO — add link before submission_
 
-See [docs/PreReq.md](docs/PreReq.md) for full setup instructions, including Python environment setup with Anaconda/Miniconda or the standard Python virtual environment tool, required tools, and IDE configuration.
+---
 
-A full index of the project documentation is in [docs/README.md](docs/README.md).
+## What it does
 
-## Structure of the Repo
+Shared rooms run on chores nobody tracks. Someone skips the trash, someone else
+notices, and there is no record of any of it until the room stops speaking to
+each other.
 
-- This repository is organized into six main directories:
-  - `./app` - the Streamlit app
-  - `./api` - the Flask REST API
-  - `./database-files` - SQL scripts to initialize the MySQL database
-  - `./datasets` - folder for storing datasets
-  - `./ml-src` - folder for ML model development (Jupyter notebooks, training scripts)
-  - `./docs` - project documentation
+Roommate Reviewer gives a room one place to agree on who does what, mark chores
+off as they get done, and raise a flag when they don't. When a room cannot sort
+something out on its own, it escalates to the Residence Advisor with the history
+already attached.
 
-- The repo also contains a `docker-compose.yaml` file that is used to set up the Docker containers for the front end app, the REST API, and MySQL database.
+## Who uses it
 
-## Suggestion for Learning the Project Code Base
+The app ships with three personas. You pick one on the landing page — there is
+no real login, the buttons just set a role in the session.
 
-If you are not familiar with web app development, this code base might be confusing. But don't worry, we'll get through it together. Here are some suggestions for learning the code base:
+| Persona | Role | What they do |
+| --- | --- | --- |
+| **Joshua Patel** | Resident | Plans the week's chores, checks them off, files a report when a roommate skips one, and browses the room's task history. |
+| **Frank Osei** | Resident falling behind | Asks for extensions, disputes reports filed against him, marks the days he is away, and watches his standing against the room. |
+| **Carol Diaz** | Residence Advisor | Reviews reports across her rooms, tracks completion rates, manages interventions, and sets the rules. |
 
-1. Start by exploring the `./app` directory. This is where the Streamlit app is located. The Streamlit app is a Python-based web app that is used to interact with the user. It's a great way to build a simple web app without having to learn a lot of web development.
-1. Next, explore the `./api` directory. This is where the Flask REST API is located. The REST API is used to interact with the database and perform other server-side tasks. You might also consider this the "application logic" or "business logic" layer of your app.
-1. Finally, explore the `./database-files` directory. This is where the SQL scripts are located that will be used to initialize the MySQL database.
-1. Bonus: If you want a totally separate copy of the template repo on your laptop to explore and experiment with without affecting your team repo, see the *Setting Up a Personal Sandbox Repo* section in [docs/RepoSetup.md](docs/RepoSetup.md).
+Each persona has a landing page plus four feature pages, for twelve feature
+pages in total.
 
-## Setting Up the Repos
+## Architecture
 
-See [docs/RepoSetup.md](docs/RepoSetup.md) for full instructions on forking and configuring the team repo, setting up the `.env` file, and running the Docker containers. An optional section there also covers setting up a personal sandbox repo for individual experimentation.
+Three Docker containers. The front end never talks to the database directly —
+every page goes through the REST API.
 
-## Important Tips
+```
+Streamlit  ──HTTP──>  Flask API  ──SQL──>  MySQL
+  :8501                 :4000               :3200
+```
 
-See [docs/ImportantTips.md](docs/ImportantTips.md) for tips on hot reloading, recovering from container crashes, and working with the MySQL container — including why you need the `-v` flag to pick up changes to your SQL files.
+- **`./app`** — Streamlit front end. One Python file per page in `app/src/pages/`,
+  with the sidebar built by role in `app/src/modules/nav.py`.
+- **`./api`** — Flask REST API, split into blueprints by resource (users, rooms,
+  tasks, requests, room reports, RAs, rules, dorms, away dates).
+- **`./database-files`** — `ddl.sql` creates the schema and seeds it. Any `.sql`
+  file here runs automatically when the database container is **created**.
+- **`./docs`** — project documentation, including the REST route matrix.
 
-## Handling User Role Access and Control
+## Running it
 
-This project uses a simple Role-based Access Control (RBAC) system implemented in Streamlit. The template ships with example roles (*Political Strategist*, *USAID Worker*, *System Administrator*) to illustrate the pattern — **your team will replace these with the personas specific to your project**. You will define four personas and implement three of them.
+You need Docker Desktop installed and running.
 
-See [docs/RBAC.md](docs/RBAC.md) for a full explanation of how the RBAC system works and step-by-step instructions for adapting it to your own roles.
+**1. Create the environment file.** Copy the template and fill in the two
+placeholder values:
 
-## Changing How the App Looks
+```bash
+cp api/.env.template api/.env
+```
 
-The app's colors, fonts, and sidebar styling all come from `app/src/.streamlit/config.toml` — there is no CSS to edit. Save the file and the running app picks the change up; refresh the browser tab if you don't see it.
+Then open `api/.env` and set `SECRET_KEY` to any random string and
+`MYSQL_ROOT_PASSWORD` to a password of your choice. Leave the rest alone —
+`DB_NAME` must stay `roommate_app`, which is the database `ddl.sql` creates.
 
-See [docs/Theming.md](docs/Theming.md) for what each setting does and how to build your own palette.
+**2. Start everything:**
 
-## (Completely Optional) Incorporating ML Models into your Project
+```bash
+docker compose up -d
+```
 
-**This is entirely optional. No part of the project requires a machine learning model, and you are not expected to build one.** The template simply happens to include the plumbing for a hypothetical model, described below, in case your team is curious and has spare time. Skipping this section costs you nothing.
+**3. Open the app** at [http://localhost:8501](http://localhost:8501).
 
-The model shipped in `api/backend/ml_models/model01.py` is a *fake* placeholder — it reads coefficients out of the `model1_params` table and computes a dot product. It is there to show the wiring, not to make real predictions.
+The API is reachable on its own at `http://localhost:4000` if you want to check
+whether a problem is the page or the backend. MySQL is exposed on port `3200`.
 
-If you do want to explore it:
+### Resetting the database
 
-1. Collect and preprocess necessary datasets for your models.
-1. Build, train, and test your model in a Jupyter Notebook.
-   - You can store your datasets in the `datasets` folder and your notebook in the `ml-src` folder.
-1. Once your team is happy with the model's performance, convert your notebook code to a pure Python script.
-   - You can include the `training` and `testing` functionality as well as the `prediction` functionality.
-   - Develop and test this pure Python script first in the `ml-src` folder.
-1. Review the `api/backend/ml_models` module. **Important**: you would never want to hard code the model parameter weights directly in the prediction function — store them in the database, as `model01.py` does.
-1. The prediction route for the REST API is in `api/backend/simple/simple_routes.py`. It accepts two URL parameters and passes them to the `predict` function in the `ml_models` module, then packages the result back to Streamlit as JSON.
-1. Back in Streamlit, check out `app/src/pages/11_Prediction.py`. Two numeric input fields are created; when the button is pressed, it makes a request to the REST API at `/prediction/{var_01}/{var_02}` and displays the results.
+The seed SQL only runs when the database container is **created**, not when it
+restarts. If you change `ddl.sql`, a plain restart will not pick it up — you have
+to destroy the volume:
+
+```bash
+docker compose down db -v
+docker compose up db -d
+```
+
+This deletes everything currently in the database and reseeds from `ddl.sql`.
+
+### Picking up code changes
+
+`app/src` and `api/` are mounted into their containers, so editing a page file
+and refreshing the browser is enough. Two exceptions:
+
+- Editing `app/src/modules/*.py` needs `docker restart web-app`, because
+  Streamlit caches imported modules.
+- Editing either `requirements.txt` needs a rebuild: `docker compose build app`
+  or `docker compose build api`.
+
+## Documentation
+
+`docs/rest-matrix.md` lists the API routes and which user story each one serves.
+The rest of `docs/` covers setup prerequisites, theming, and the role-based
+access pattern.

@@ -64,6 +64,23 @@ for task in assigned_tasks:
 for day in week_days:
     tasks_by_day[day].sort(key=lambda t: t['Task_Name'])
 
+# Headline numbers for the week, counted from the tasks already fetched above.
+week_tasks = [task for day in week_days for task in tasks_by_day[day]]
+
+with st.container(border=True):
+    metric_cols = st.columns(4)
+    metric_cols[0].metric("Due this week", len(week_tasks))
+    metric_cols[1].metric(
+        "Done",
+        sum(1 for t in week_tasks if t['status'] == 'done'),
+    )
+    metric_cols[2].metric(
+        "Overdue",
+        sum(1 for t in week_tasks
+            if t['due_date'] < today and t['status'] not in ('done', 'missed')),
+    )
+    metric_cols[3].metric("Due today", len(tasks_by_day[today]))
+
 
 STATUS_BADGES = {
     'todo': ('To Do', 'gray'),
@@ -80,16 +97,14 @@ def render_task_row(task):
     with st.container(border=True):
         name_col, status_col, check_col = st.columns([5, 2, 1])
         with name_col:
+            # Streamlit's colour markdown follows the theme, so this stays readable
+            # if the palette in config.toml changes.
             if is_overdue:
-                st.markdown(
-                    f"<span style='color:#b00020;background-color:#fdecea;"
-                    f"padding:2px 8px;border-radius:4px;font-weight:600;'>"
-                    f"{task['Task_Name']}</span>",
-                    unsafe_allow_html=True,
-                )
+                st.markdown(f":red[**{task['Task_Name']}**]")
+            elif is_done:
+                st.markdown(f":gray[~~{task['Task_Name']}~~]")
             else:
-                task_label = f"~~{task['Task_Name']}~~" if is_done else task['Task_Name']
-                st.markdown(task_label)
+                st.markdown(task['Task_Name'])
         with status_col:
             if is_overdue:
                 st.badge("Overdue", color="red")
@@ -149,26 +164,40 @@ tasks_col, roommates_col = st.columns([3, 1])
 with tasks_col:
     with st.container(border=True, gap="xsmall"):
         week_range = f"{week_start.strftime('%b %d')} - {week_end.strftime('%b %d, %Y')}"
-        st.subheader(f"This Week ({week_range})")
+        st.subheader("This Week", divider="gray")
+        st.caption(week_range)
 
-        for day in week_days:
-            st.markdown(f"**{day.strftime('%A, %b %d')}**")
-            day_tasks = tasks_by_day[day]
-            if not day_tasks:
-                st.markdown(":gray[*No tasks*]")
-            else:
+        if not week_tasks:
+            st.caption("Nothing due this week. Use New Task + to add one.")
+        else:
+            for day in week_days:
+                day_tasks = tasks_by_day[day]
+                # Every day stays on the page so the shape of the week is visible,
+                # but an empty one costs a single dim line rather than a heading,
+                # an empty state and a divider.
+                label = day.strftime('%a, %b %d')
+                with st.container(horizontal=True,
+                                  vertical_alignment="center",
+                                  horizontal_alignment="distribute"):
+                    st.markdown(f"**{label}**" if day_tasks else f":gray[{label}]")
+                    if day == today:
+                        st.badge("Today", color="primary")
+
                 for task in day_tasks:
                     render_task_row(task)
-            st.divider()
-
-        if st.button("New Task +", use_container_width=True):
-            open_new_task_dialog()
 
 with roommates_col:
+    if st.button("New Task +", type="primary", use_container_width=True):
+        open_new_task_dialog()
+
     with st.container(border=True):
         st.subheader("Roommates")
         if not roommates:
-            st.markdown(":gray[*No roommates*]")
+            st.caption("No roommates on file.")
         else:
+            st.caption(f"{len(roommates)} in your room")
             for roommate in roommates:
-                st.markdown(f"{roommate['First_Name']} {roommate['Last_Name']}")
+                initials = f"{roommate['First_Name'][:1]}{roommate['Last_Name'][:1]}"
+                with st.container(horizontal=True, vertical_alignment="center"):
+                    st.badge(initials, color="gray")
+                    st.markdown(f"{roommate['First_Name']} {roommate['Last_Name']}")

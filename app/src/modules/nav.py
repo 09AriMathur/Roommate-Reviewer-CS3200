@@ -5,6 +5,14 @@
 import streamlit as st
 
 
+# How each role is described under the user's name in the sidebar.
+ROLE_LABELS = {
+    "user": "Resident",
+    "student": "Resident",
+    "ra": "Residence Advisor",
+}
+
+
 # ---- General ----------------------------------------------------------------
 
 def home_nav():
@@ -12,55 +20,37 @@ def home_nav():
 
 
 def about_page_nav():
-    st.sidebar.page_link("pages/30_About.py", label="About", icon="🧠")
+    st.sidebar.page_link("pages/30_About.py", label="About", icon="ℹ️")
 
 
-# ---- Role: pol_strat_advisor ------------------------------------------------
-
-def pol_strat_home_nav():
-    st.sidebar.page_link(
-        "pages/00_Pol_Strat_Home.py", label="Political Strategist Home", icon="👤"
-    )
-
-
-def world_bank_viz_nav():
-    st.sidebar.page_link(
-        "pages/01_World_Bank_Viz.py", label="World Bank Visualization", icon="🏦"
-    )
-
-
-def map_demo_nav():
-    st.sidebar.page_link("pages/02_Map_Demo.py", label="Map Demonstration", icon="🗺️")
-
-
-# ---- Role: user --------------------------------------------------------------
+# ---- Role: user (Joshua) -----------------------------------------------------
 
 def user_start_nav():
-    st.sidebar.page_link("pages/00_User_Start.py", label="User Start", icon="👤")
+    st.sidebar.page_link("pages/00_User_Start.py", label="Home", icon="🏠")
 
 
 def user_home_nav():
-    st.sidebar.page_link("pages/01_User_Home.py", label="User Home", icon="🏠")
+    st.sidebar.page_link("pages/01_User_Home.py", label="This Week", icon="🗓️")
 
 
 def user_room_reports_nav():
-    st.sidebar.page_link("pages/02_User_Room_Reports.py", label="Report", icon="📝")
+    st.sidebar.page_link("pages/02_User_Room_Reports.py", label="Chore Reports", icon="📝")
 
 
 def user_ra_interventions_nav():
     st.sidebar.page_link(
-        "pages/03_User_RA_Interventions.py", label="RA Interventions", icon="🛠️"
+        "pages/03_User_RA_Interventions.py", label="Ask My RA", icon="🛎️"
     )
 
 
 def past_tasks_nav():
-    st.sidebar.page_link("pages/04_Past_Tasks.py", label="Past Tasks", icon="🗒️")
+    st.sidebar.page_link("pages/04_Past_Tasks.py", label="Task History", icon="🗂️")
 
 
-# ---- Role: student -----------------------------------------------------------
+# ---- Role: student (Frank) ---------------------------------------------------
 
 def student_home_nav():
-    st.sidebar.page_link("pages/10_Student_Home.py", label="My Dorm", icon="👤")
+    st.sidebar.page_link("pages/10_Student_Home.py", label="Home", icon="🏠")
 
 
 def my_chores_nav():
@@ -79,54 +69,10 @@ def my_standing_nav():
     st.sidebar.page_link("pages/14_My_Standing.py", label="My Standing", icon="📈")
 
 
-# ---- Role: usaid_worker -----------------------------------------------------
-
-def usaid_worker_home_nav():
-    st.sidebar.page_link(
-        "pages/10_USAID_Worker_Home.py", label="USAID Worker Home", icon="🏠"
-    )
-
-
-def ngo_directory_nav():
-    st.sidebar.page_link("pages/14_NGO_Directory.py", label="NGO Directory", icon="📁")
-
-
-def add_ngo_nav():
-    st.sidebar.page_link("pages/15_Add_NGO.py", label="Add New NGO", icon="➕")
-
-
-def prediction_nav():
-    st.sidebar.page_link(
-        "pages/11_Prediction.py", label="Regression Prediction", icon="📈"
-    )
-
-
-def api_test_nav():
-    st.sidebar.page_link("pages/12_API_Test.py", label="Test the API", icon="🛜")
-
-
-def classification_nav():
-    st.sidebar.page_link(
-        "pages/13_Classification.py", label="Classification Demo", icon="🌺"
-    )
-
-
-# ---- Role: administrator ----------------------------------------------------
-
-def admin_home_nav():
-    st.sidebar.page_link("pages/20_Admin_Home.py", label="System Admin", icon="🖥️")
-
-
-def ml_model_mgmt_nav():
-    st.sidebar.page_link(
-        "pages/21_ML_Model_Mgmt.py", label="ML Model Management", icon="🏢"
-    )
-
-
-# ---- Role: ra (Residence Advisor) -------------------------------------------
+# ---- Role: ra (Carol) --------------------------------------------------------
 
 def ra_home_nav():
-    st.sidebar.page_link("pages/00_RA_Home.py", label="RA Home", icon="🏠")
+    st.sidebar.page_link("pages/00_RA_Home.py", label="Home", icon="🏠")
 
 
 def ra_room_reports_nav():
@@ -137,21 +83,38 @@ def ra_room_reports_nav():
 
 def ra_preform_overview_nav():
     st.sidebar.page_link(
-        "pages/02_RA_Preform_Overview.py", label="Performance Overview", icon="📊"
+        "pages/02_RA_Preform_Overview.py", label="Performance", icon="📊"
     )
 
 
 def ra_inter_man_nav():
     st.sidebar.page_link(
-        "pages/03_RA_Inter_Man.py", label="Intervention Manager", icon="🛠️"
+        "pages/03_RA_Inter_Man.py", label="Interventions", icon="🛠️"
     )
 
 
 def ra_rules_man_nav():
-    st.sidebar.page_link("pages/04_RA_Rules_Man.py", label="Rules Manager", icon="📜")
+    st.sidebar.page_link("pages/04_RA_Rules_Man.py", label="Rules", icon="📜")
 
 
 # ---- Sidebar assembly -------------------------------------------------------
+
+def current_user_nav():
+    """Show who is signed in, under the logo.
+
+    Not every role has a first name in the session straight after login -- the
+    'user' role only picks one up once its landing page fetches the record --
+    so fall back to the role on its own rather than printing nothing.
+    """
+    name = st.session_state.get("first_name")
+    label = ROLE_LABELS.get(st.session_state.get("role"), "Signed in")
+
+    if name:
+        st.sidebar.markdown(f"**{name}**")
+        st.sidebar.caption(label)
+    else:
+        st.sidebar.markdown(f"**{label}**")
+
 
 def SideBarLinks(show_home=False):
     """
@@ -159,13 +122,19 @@ def SideBarLinks(show_home=False):
     The role is stored in st.session_state when the user logs in on Home.py.
     """
 
-    # Logo appears at the top of the sidebar on every page
-    st.sidebar.image("assets/logo.png", width=150)
+    # Logo, centred at the top of the sidebar on every page. st.logo() would be
+    # the tidier primitive but it renders the mark at roughly 24px, too small to
+    # read, so this places the image directly instead.
+    st.sidebar.columns([1, 2, 1])[1].image("assets/logo.png", width=96)
 
     # If no one is logged in, send them to the Home (login) page
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
         st.switch_page("Home.py")
+
+    if st.session_state["authenticated"]:
+        current_user_nav()
+        st.sidebar.divider()
 
     if show_home:
         home_nav()
@@ -186,23 +155,6 @@ def SideBarLinks(show_home=False):
             my_away_nav()
             my_standing_nav()
 
-        if st.session_state["role"] == "pol_strat_advisor":
-            pol_strat_home_nav()
-            world_bank_viz_nav()
-            map_demo_nav()
-
-        if st.session_state["role"] == "usaid_worker":
-            usaid_worker_home_nav()
-            ngo_directory_nav()
-            add_ngo_nav()
-            prediction_nav()
-            api_test_nav()
-            classification_nav()
-
-        if st.session_state["role"] == "administrator":
-            admin_home_nav()
-            ml_model_mgmt_nav()
-
         if st.session_state["role"] == "ra":
             ra_home_nav()
             ra_room_reports_nav()
@@ -210,11 +162,13 @@ def SideBarLinks(show_home=False):
             ra_inter_man_nav()
             ra_rules_man_nav()
 
+        st.sidebar.divider()
+
     # About link appears at the bottom for all roles
     about_page_nav()
 
     if st.session_state["authenticated"]:
-        if st.sidebar.button("Logout"):
+        if st.sidebar.button("Log out", use_container_width=True):
             del st.session_state["role"]
             del st.session_state["authenticated"]
             st.switch_page("Home.py")

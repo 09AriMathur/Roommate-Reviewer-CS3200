@@ -41,16 +41,17 @@ st.write('#### Choose a persona to explore the app')
 # functionality, we put a card on the screen with a button that the
 # user can click to MIMIC logging in as that mock user.
 #
-# Bordered columns keep the three cards the same height however the
-# descriptions wrap, so the buttons stay on a common baseline.
+# Bordered columns match each other's height, which keeps the three buttons on
+# a common baseline -- but only while the descriptions all wrap to the same
+# number of lines. Keep them short and roughly equal; a longer one pushes its
+# own button down and nothing else's.
 joshua_col, frank_col, carol_col = st.columns(3, gap='medium', border=True)
 
 with joshua_col:
     st.markdown('### Joshua Patel')
     st.badge('Resident', color='gray')
     st.caption(
-        "Plans the week's chores, checks them off, and files a report when a "
-        "roommate skips one."
+        "Plans chores and reports the skipped ones."
     )
     if st.button('Log in as Joshua',
                  type='primary',
@@ -68,8 +69,7 @@ with frank_col:
     st.markdown('### Frank Osei')
     st.badge('Resident', color='gray')
     st.caption(
-        "Behind on his chores. Asks for extensions, disputes reports, and "
-        "marks the days he is away."
+        "Behind. Asks for extensions, disputes reports."
     )
     if st.button('Log in as Frank',
                  type='primary',
@@ -87,8 +87,7 @@ with carol_col:
     st.markdown('### Carol Diaz')
     st.badge('Residence Advisor', color='gray')
     st.caption(
-        "Reviews reports across her rooms, tracks completion rates, and sets "
-        "the rules residents follow."
+        "Reviews reports and sets rules for her rooms."
     )
     if st.button('Log in as Carol',
                  type='primary',

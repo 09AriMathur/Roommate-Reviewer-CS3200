@@ -48,30 +48,31 @@ with st.container(border=True):
 
 st.write('### What would you like to do today?')
 
-# Bordered columns give the four cards a matching height without having to
-# pin one, since none of them sit next to an empty spacer column.
+# Bordered columns give the four cards a matching height, which keeps the four
+# buttons level -- but only while the descriptions all wrap to the same number
+# of lines. Keep them to one short line each.
 cards = st.columns(4, gap='medium', border=True)
 
 with cards[0]:
     st.markdown('**This Week**')
-    st.caption('Your chores day by day, and who else is in your room.')
+    st.caption('Your chores, day by day.')
     if st.button('Open', type='primary', use_container_width=True, key='go_week'):
         st.switch_page('pages/01_User_Home.py')
 
 with cards[1]:
     st.markdown('**Chore Reports**')
-    st.caption('Flag a chore a roommate skipped, and see the ones already filed.')
+    st.caption('Flag a skipped chore.')
     if st.button('Open', type='primary', use_container_width=True, key='go_reports'):
         st.switch_page('pages/02_User_Room_Reports.py')
 
 with cards[2]:
     st.markdown('**Ask My RA**')
-    st.caption('Request an intervention when the room cannot sort it out alone.')
+    st.caption('Ask your RA to step in.')
     if st.button('Open', type='primary', use_container_width=True, key='go_ra'):
         st.switch_page('pages/03_User_RA_Interventions.py')
 
 with cards[3]:
     st.markdown('**Task History**')
-    st.caption('Every task your room has created, with filters and search.')
+    st.caption('Everything, with filters.')
     if st.button('Open', type='primary', use_container_width=True, key='go_history'):
         st.switch_page('pages/04_Past_Tasks.py')

@@ -177,6 +177,16 @@ CREATE TABLE Rules (
 -- ===========================================================================
 -- SAMPLE DATA
 --
+-- Volumes: 32 halls, 32 housing staff, 31 RAs, 68 rooms, 146 residents, 505 chores,
+-- 137 reports, 109 requests, 60 interventions, 73 away periods, 65 rules, 231 log
+-- entries. Dorms and System_Admin are the whole housing operation, not just the part
+-- running the pilot -- the office administers every hall on campus and staffs every
+-- one of them, while the chore pilot itself runs in the first fourteen halls, which
+-- is where every room, resident and chore below sits. A hall outside the pilot has no
+-- rooms in this database yet; it is on file because the housing system knows its own
+-- buildings, and because the hall a room belongs to is picked from this list rather
+-- than typed in.
+--
 -- One building-wide chore pilot, mid-way through the 2026 summer-2 housing term.
 -- Everything is anchored to 13 August 2026: chore charts were posted weekly from
 -- 22 June, deadlines run a week or two past today, and nothing was created in the
@@ -234,7 +244,30 @@ INSERT INTO Dorms (DormID, Dorm_Name) VALUES
 (11, 'Hastings Hall'),
 (12, 'Davenport Commons'),
 (13, 'International Village'),
-(14, 'West Village H');
+(14, 'West Village H'),
+-- The rest of the halls the housing office administers. The chore pilot runs in the
+-- fourteen above, which is why the rooms and residents below all sit in those; these
+-- are on file because a housing system knows its own buildings whether or not a
+-- building has opted into a pilot, and because the hall a room belongs to is chosen
+-- from this list rather than typed.
+(15, 'West Village A'),
+(16, 'West Village B'),
+(17, 'West Village C'),
+(18, 'West Village E'),
+(19, 'West Village F'),
+(20, 'West Village G'),
+(21, 'East Village'),
+(22, 'Light Hall'),
+(23, 'Loftman Hall'),
+(24, 'Burstein Hall'),
+(25, 'Levine Hall'),
+(26, 'Bradstreet Hall'),
+(27, 'Bromley Hall'),
+(28, 'Bourneuf House'),
+(29, 'Charlesgate Hall'),
+(30, 'Bower House'),
+(31, 'Lightview'),
+(32, 'The Douglass');
 
 -- Housing office staff. The admin table exists to sign off on activity-log
 -- entries, so it stays small: these are the people who actually review them.
@@ -244,7 +277,36 @@ INSERT INTO System_Admin (AdminID, Email, First_Name, Last_Name) VALUES
 (3, 'priya.nair@northeastern.edu', 'Priya', 'Nair'),
 (4, 'marcus.deleon@northeastern.edu', 'Marcus', 'Deleon'),
 (5, 'wei.zhang@northeastern.edu', 'Wei', 'Zhang'),
-(6, 'dana.okoye@northeastern.edu', 'Dana', 'Okoye');
+(6, 'dana.okoye@northeastern.edu', 'Dana', 'Okoye'),
+-- The rest of the housing office. Logs.ReviewerID is the staff member who signed off
+-- on an entry, and sign-off is spread across the department rather than landing on one
+-- desk, so the activity log below draws its reviewers from this whole list.
+(7, 'nora.whitfield@northeastern.edu', 'Nora', 'Whitfield'),
+(8, 'andre.baptiste@northeastern.edu', 'Andre', 'Baptiste'),
+(9, 'hannah.liu@northeastern.edu', 'Hannah', 'Liu'),
+(10, 'omar.rashidi@northeastern.edu', 'Omar', 'Rashidi'),
+(11, 'gabriela.santos@northeastern.edu', 'Gabriela', 'Santos'),
+(12, 'tyler.brennan@northeastern.edu', 'Tyler', 'Brennan'),
+(13, 'aisha.mahmood@northeastern.edu', 'Aisha', 'Mahmood'),
+(14, 'peter.novak@northeastern.edu', 'Peter', 'Novak'),
+(15, 'rosalind.achebe@northeastern.edu', 'Rosalind', 'Achebe'),
+(16, 'kevin.doyle@northeastern.edu', 'Kevin', 'Doyle'),
+(17, 'mei.tanaka@northeastern.edu', 'Mei', 'Tanaka'),
+(18, 'daniel.ferreira@northeastern.edu', 'Daniel', 'Ferreira'),
+(19, 'sofia.marchetti@northeastern.edu', 'Sofia', 'Marchetti'),
+(20, 'jerome.washington@northeastern.edu', 'Jerome', 'Washington'),
+(21, 'elena.kowalski@northeastern.edu', 'Elena', 'Kowalski'),
+(22, 'rahul.iyer@northeastern.edu', 'Rahul', 'Iyer'),
+(23, 'bridget.hollis@northeastern.edu', 'Bridget', 'Hollis'),
+(24, 'sean.okeefe@northeastern.edu', 'Sean', 'OKeefe'),
+(25, 'amara.nwosu@northeastern.edu', 'Amara', 'Nwosu'),
+(26, 'lucas.moreau@northeastern.edu', 'Lucas', 'Moreau'),
+(27, 'yasmin.haddad@northeastern.edu', 'Yasmin', 'Haddad'),
+(28, 'grant.mcallister@northeastern.edu', 'Grant', 'McAllister'),
+(29, 'ines.delgado@northeastern.edu', 'Ines', 'Delgado'),
+(30, 'toby.rasmussen@northeastern.edu', 'Toby', 'Rasmussen'),
+(31, 'clara.petrov@northeastern.edu', 'Clara', 'Petrov'),
+(32, 'malik.johnson@northeastern.edu', 'Malik', 'Johnson');
 
 -- Resident advisors, two or three rooms each, all inside one hall. Settled_Reqs
 -- and Settled_Reps are derived below from what this RA's residents actually
@@ -1792,6 +1854,41 @@ INSERT INTO Rules (RuleID, UserID, Descr, RA_ID, DormID, Room_Number) VALUES
 (64, NULL, 'Trash goes out Sunday night, before the hallway bins are emptied Monday.', 31, 14, 315),
 (65, NULL, 'Dishes go in the dishwasher the same day they are used.', 31, 14, 407);
 
+-- Every resident is on the chart. Eight had a room, an RA and a rotation running
+-- around them without ever being handed a turn, which is not a resident a chore app
+-- would have -- their My Chores page was four empty tabs. Each gets the turn the
+-- rotation owes them in the coming week, created by a roommate the way the New Chore
+-- dialog creates one, or by themselves where they have the room to themselves.
+INSERT INTO Tasks (Task_Name, Created_At, due_date, status, Created_UserID, Assigned_UserID)
+SELECT ELT(1 + u.UserID % 6,
+           'Take out trash', 'Clean shared bathroom', 'Sweep the hallway',
+           'Wipe down kitchen counters', 'Empty the dishwasher', 'Sort recycling bins'),
+       '2026-08-09 11:00:00',
+       DATE_ADD('2026-08-17', INTERVAL u.UserID % 5 DAY),
+       'todo',
+       COALESCE(mate.UserID, u.UserID),
+       u.UserID
+FROM Users u
+LEFT JOIN (
+    SELECT resident.UserID AS resident, other.UserID,
+           ROW_NUMBER() OVER (PARTITION BY resident.UserID ORDER BY other.UserID) AS rn
+    FROM Users resident
+    JOIN Users other
+      ON other.DormID = resident.DormID AND other.Room_Number = resident.Room_Number
+     AND other.UserID <> resident.UserID
+) mate ON mate.resident = u.UserID AND mate.rn = 1
+LEFT JOIN (SELECT DISTINCT Assigned_UserID FROM Tasks WHERE Assigned_UserID IS NOT NULL) busy
+       ON busy.Assigned_UserID = u.UserID
+WHERE busy.Assigned_UserID IS NULL;
+
+-- Logs.ReviewerID is the housing-office staffer who signed the entry off. The seeded
+-- values pointed at the first handful of admins because those were the only rows that
+-- existed when the log was written; sign-off actually moves around the department.
+-- Entries nobody signed off stay unsigned -- that is a real state, not a gap.
+UPDATE Logs
+SET ReviewerID = 1 + (Log_Id * 7) % (SELECT COUNT(*) FROM System_Admin)
+WHERE ReviewerID IS NOT NULL;
+
 -- ===========================================================================
 -- THE PAPER TRAIL BEHIND EVERY MISS
 --
@@ -1867,6 +1964,46 @@ JOIN (
 LEFT JOIN (SELECT DISTINCT TaskID FROM Room_Reports WHERE TaskID IS NOT NULL) seen
        ON seen.TaskID = t.Task_ID
 WHERE t.status = 'missed' AND seen.TaskID IS NULL AND t.due_date IS NOT NULL;
+
+-- In a triple, one roommate skipping a chore is noticed by both the others, and the
+-- app takes the second report: the rule is one report per chore per filer, not one per
+-- chore. Two rows, one strike -- open strikes count distinct chores, so corroboration
+-- does not double-punish. It is also what makes Room_Reports the table it is: the row
+-- carries a filer, a chore and a ruling, so the same chore reaching this table twice
+-- from two residents is the M:N between them being resolved, not a duplicate.
+INSERT INTO Room_Reports (Time_Reported, Reviewed_At, Status, TaskID, UserID, Description)
+SELECT CASE
+           WHEN first.Reviewed_At IS NULL
+               THEN first.Time_Reported + INTERVAL (2 + t.Task_ID % 5) HOUR
+           ELSE LEAST(first.Time_Reported + INTERVAL (2 + t.Task_ID % 5) HOUR,
+                      first.Reviewed_At - INTERVAL 1 HOUR)
+       END,
+       first.Reviewed_At, first.Status, t.Task_ID, second.UserID,
+       ELT(1 + t.Task_ID % 3,
+           CONCAT('Same as my roommate -- ', LOWER(t.Task_Name),
+                  ' never got done that week.'),
+           CONCAT('Adding to the report above: ', LOWER(t.Task_Name),
+                  ' was still outstanding when I got back.'),
+           CONCAT('Confirming this one. ', t.Task_Name,
+                  ' was skipped and the rest of us picked up the slack.'))
+FROM Tasks t
+JOIN Users a ON a.UserID = t.Assigned_UserID
+JOIN (
+    SELECT rp.TaskID, rp.UserID, rp.Time_Reported, rp.Reviewed_At, rp.Status,
+           ROW_NUMBER() OVER (PARTITION BY rp.TaskID
+                              ORDER BY rp.Time_Reported, rp.ReportID) AS rn,
+           COUNT(*)   OVER (PARTITION BY rp.TaskID) AS filed_so_far
+    FROM Room_Reports rp
+) first ON first.TaskID = t.Task_ID AND first.rn = 1 AND first.filed_so_far = 1
+JOIN (
+    SELECT accused.UserID AS accused, other.UserID,
+           ROW_NUMBER() OVER (PARTITION BY accused.UserID ORDER BY other.UserID) AS rn
+    FROM Users accused
+    JOIN Users other
+      ON other.DormID = accused.DormID AND other.Room_Number = accused.Room_Number
+     AND other.UserID <> accused.UserID
+) second ON second.accused = a.UserID AND second.rn = 2
+WHERE t.status = 'missed' AND second.UserID <> first.UserID;
 
 -- ===========================================================================
 -- SETTLED REQUESTS, CARRIED OUT

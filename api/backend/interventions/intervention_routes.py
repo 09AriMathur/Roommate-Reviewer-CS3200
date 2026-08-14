@@ -64,6 +64,56 @@ def get_interventions():
         cursor.close()
 
 
+# Get a single intervention by id, with the same resident/RA names joined in as the list route.
+@interventions.route("/interventions/<int:request_id>", methods=["GET"])
+def get_intervention(request_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+                SELECT i.*,
+                       u.First_Name, u.Last_Name, u.DormID, u.Room_Number,
+                       r.First_Name AS ra_first, r.Last_Name AS ra_last
+                FROM RA_Intervention i
+                JOIN Users u ON u.UserID = i.UserID
+                LEFT JOIN RAs r ON r.RA_ID = i.RA
+                WHERE i.RequestID = %s
+            """,
+            (request_id,),
+        )
+        intervention = cursor.fetchone()
+        if not intervention:
+            return jsonify({"error": "Intervention not found"}), 404
+
+        return jsonify(intervention), 200
+    except Error as e:
+        current_app.logger.error(f'Database error in get_intervention: {e}')
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
+# Counts of interventions grouped by status, for the admin/RA dashboards.
+@interventions.route("/interventions/stats", methods=["GET"])
+def get_intervention_stats():
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT COUNT(*) AS total FROM RA_Intervention")
+        total = cursor.fetchone()["total"]
+
+        cursor.execute(
+            "SELECT Status, COUNT(*) AS count FROM RA_Intervention GROUP BY Status"
+        )
+        by_status = cursor.fetchall()
+
+        return jsonify({"total": total, "by_status": by_status}), 200
+    except Error as e:
+        current_app.logger.error(f'Database error in get_intervention_stats: {e}')
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
 # File an intervention. The RA is looked up server-side from the resident's own Users.RA
 # column rather than trusted from the body, so a resident can only ever file against
 # their own assigned RA.

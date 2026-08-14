@@ -5,6 +5,18 @@ st.set_page_config(layout='wide')
 
 SideBarLinks()
 
+# A Back control in the LEFT pane (sidebar) that returns the user to their own
+# home page rather than the login screen. Falls back to login if no role is set.
+_home_by_role = {
+    "user": "pages/00_Resident_Home.py",
+    "student": "pages/00_Resident_Home.py",
+    "ra": "pages/00_RA_Home.py",
+    "admin": "pages/20_Admin_Home.py",
+}
+_back_target = _home_by_role.get(st.session_state.get("role"), "Home.py")
+if st.sidebar.button("← Back", type="primary", use_container_width=True):
+    st.switch_page(_back_target)
+
 st.title("About Roommate Reviewer")
 
 st.markdown(
@@ -74,16 +86,3 @@ st.markdown(
     Built for CS 3200, Database Design, Summer B 2026.
     """
 )
-
-# Send the user back into their own area rather than out to the login screen.
-# Falls back to the login page if somehow no role is set.
-_home_by_role = {
-    "user": "pages/00_Resident_Home.py",
-    "student": "pages/00_Resident_Home.py",
-    "ra": "pages/00_RA_Home.py",
-    "admin": "pages/20_Admin_Home.py",
-}
-_back_target = _home_by_role.get(st.session_state.get("role"), "Home.py")
-
-if st.button("← Back", type="primary"):
-    st.switch_page(_back_target)

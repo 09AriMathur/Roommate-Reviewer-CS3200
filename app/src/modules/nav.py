@@ -2,7 +2,27 @@
 
 # This file has functions to add links to the left sidebar based on the user's role.
 
+import base64
+from pathlib import Path
+
 import streamlit as st
+
+
+def _clickable_logo_html(width=96):
+    """HTML for the sidebar logo, wrapped in a link back to the home page.
+
+    st.image() can't be made clickable, so the logo is inlined as base64 inside
+    an <a href="/"> (the app root, which is Home.py). target="_self" keeps the
+    navigation in the same tab instead of opening a new one.
+    """
+    logo_path = Path(__file__).resolve().parent.parent / "assets" / "logo.png"
+    encoded = base64.b64encode(logo_path.read_bytes()).decode()
+    return (
+        '<div style="text-align:center; padding: 8px 0 4px 0;">'
+        '<a href="/" target="_self" title="Back to home">'
+        f'<img src="data:image/png;base64,{encoded}" width="{width}"></a>'
+        '</div>'
+    )
 
 
 # How each role is described under the user's name in the sidebar.
@@ -132,7 +152,7 @@ def SideBarLinks(show_home=False):
     # Logo, centred at the top of the sidebar on every page. st.logo() would be
     # the tidier primitive but it renders the mark at roughly 24px, too small to
     # read, so this places the image directly instead.
-    st.sidebar.columns([1, 2, 1])[1].image("assets/logo.png", width=96)
+    st.sidebar.markdown(_clickable_logo_html(), unsafe_allow_html=True)
 
     # If no one is logged in, send them to the Home (login) page
     if "authenticated" not in st.session_state:

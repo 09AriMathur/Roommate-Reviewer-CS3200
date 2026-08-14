@@ -5,7 +5,7 @@ A chore tracking and accountability app for shared dorm rooms.
 **Team:** Aryaman Mathur · Hutch Turner · Nathan Rabe · Phone Kyaw
 CS 3200 — Database Design — Summer B 2026
 
-**Demo video:** _TODO — add link before submission_
+**Demo video:** [Demo Video YouTube](https://youtu.be/evQs_XJqxgI)
 
 ---
 

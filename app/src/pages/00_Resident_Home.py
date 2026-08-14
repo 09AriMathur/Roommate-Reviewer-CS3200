@@ -197,10 +197,16 @@ else:
 
 # One call, so this panel counts exactly what the report picker would offer -- a chore
 # already reported is not offered twice, and should not be advertised here either.
-my_open_reports = {
+#
+# Every report this resident has filed, not just the ones still open. The server allows
+# one report per chore per filer *ever*, so a chore whose report an RA has already ruled
+# on is still not reportable -- asking for status=open counted those as fresh, which is
+# how this panel came to advertise "3 to report" against roommates whose chores the
+# Chore Reports picker then refused to offer at all.
+my_reported_tasks = {
     report['TaskID']
     for report in (api_get(f"/room_report/users/{USER_ID}/room_reports",
-                           params={"role": "filed", "status": "open"}, quiet=True) or [])
+                           params={"role": "filed"}, quiet=True) or [])
     if report.get('TaskID') is not None
 }
 
@@ -212,7 +218,12 @@ for mate in roommates:
                           params={"status": "todo,in_progress,missed"}, quiet=True)
                   or {}).get('assigned_tasks', [])
     reportable = [t for t in mate_tasks
-                  if is_reportable(t, today) and t['Task_ID'] not in my_open_reports]
+                  if is_reportable(t, today) and t['Task_ID'] not in my_reported_tasks]
+    # Chores of theirs that went wrong and that you have already flagged. Without this
+    # the panel had one way of saying "no action here" for a roommate who is straight and
+    # for one whose misses you have already reported, which are different situations.
+    already_flagged = [t for t in mate_tasks
+                       if is_reportable(t, today) and t['Task_ID'] in my_reported_tasks]
     # Only chores with time left on them have a "next due" to show; the rest are the
     # ones the badge is already reporting on.
     upcoming = sorted(to_date(t['due_date']) for t in mate_tasks
@@ -232,6 +243,8 @@ for mate in roommates:
 
         if reportable:
             due_col.badge(f"{len(reportable)} to report", color="red")
+        elif already_flagged:
+            due_col.caption(f"{len(already_flagged)} already reported by you")
         elif upcoming:
             due_col.badge(f"Next {upcoming[0].strftime('%b %d')}", color="gray")
         elif mate_tasks:

@@ -30,8 +30,8 @@ if user is None:
 roommates = (api_get(f"/user/users/{USER_ID}/roommates", quiet=True)
              or {}).get('roommates', [])
 
-# The whole suite: everyone whose incomplete tasks and reports should be
-# visible on this page, not just the tasks/reports belonging to USER_ID.
+# Used only to put names on rows -- a report names a chore, and the chore names an
+# assignee who is one of these people.
 group = [user] + roommates
 member_by_id = {member['UserID']: member for member in group}
 
@@ -42,19 +42,20 @@ if user.get('DormID') is not None:
     dorm = api_get(f"/dorm/dorms/{user['DormID']}", quiet=True)
     dorm_name = (dorm or {}).get('Dorm_Name')
 
-# Chores this resident already has an open report on. The API refuses a second one, so
-# offering them again in the picker just leads to a 409 on submit.
+# Chores this resident has already reported, whatever became of that report. Filtering
+# this to open reports only meant a chore came back onto the menu the moment the RA ruled
+# on it -- so a dismissed report could be refiled immediately, against the ruling. The API
+# refuses the second one, so offering it would only produce a 409.
 already_reported = {
     report['TaskID']
     for report in (api_get(f"/room_report/users/{USER_ID}/room_reports",
-                           params={"role": "filed", "status": "open"}, quiet=True) or [])
+                           params={"role": "filed"}, quiet=True) or [])
     if report.get('TaskID') is not None
 }
 
-# Only a roommate's chores are reportable -- never your own. The loop runs over
-# `roommates` rather than `group` for exactly that reason; `group` still backs the
-# reports list below, which is suite-wide and does include you.
-# Pulled per-member since assigned tasks are only exposed per-user.
+# Only a roommate's chores are reportable -- never your own, which is why this loops
+# over `roommates` and not `group`. Pulled per-member since assigned tasks are only
+# exposed per-user.
 open_tasks = []
 for member in roommates:
     member_tasks = (api_get(f"/user/users/{member['UserID']}/tasks/assigned", quiet=True)
@@ -71,19 +72,16 @@ open_tasks.sort(
     reverse=True,
 )
 
-# Reports naming anyone in the suite -- this is what makes a report visible to
-# the whole roommate group, not just the person who filed it.
-reports = []
-for member in group:
-    member_reports = api_get(
-        f"/room_report/users/{member['UserID']}/room_reports",
-        params={"role": "named"}, quiet=True,
-    ) or []
-    reports.extend(member_reports)
+# Reports this resident filed. This page is where you report someone, so the list under
+# it is the record of what you have reported and where each one got to. It used to show
+# every report naming anyone in the suite, which meant your own strikes were listed here
+# as well -- and those already have a home on My Standing, under a strike track that
+# explains what they cost you. Two pages showing the same rows meant neither said clearly
+# what it was for.
+reports = api_get(f"/room_report/users/{USER_ID}/room_reports",
+                  params={"role": "filed"}, quiet=True) or []
 
-# Most recent first. Every report naming the suite shows here, however old -- a strike
-# counts against a resident until it is closed, so hiding an older one left My Standing
-# and this page telling different stories about the same three reports.
+# Most recent first. No recency window: a report stands until an RA rules on it.
 reports.sort(key=lambda r: parsedate_to_datetime(r['Time_Reported']), reverse=True)
 
 
@@ -129,19 +127,55 @@ def render_report_row(report):
 
 
 st.title("Chore Reports")
-st.caption(f"{dorm_name + ' — ' if dorm_name else ''}Chore reports for your roommate group")
+st.caption(
+    f"{dorm_name + ' — ' if dorm_name else ''}Flag a roommate's chore that did not "
+    "happen. Your RA rules on it. Reports naming *you* are on My Standing."
+)
 
 reports_col, new_report_col = st.columns([2, 3])
 
 with reports_col:
     with st.container(border=True):
-        st.subheader("Reports")
-        with st.container(height=500):
-            if not reports:
-                st.markdown(":gray[*No reports yet*]")
-            else:
-                for report in reports:
-                    render_report_row(report)
+        st.subheader("Reports you have filed")
+
+        # Split by where each report got to, rather than one scroll of mixed statuses.
+        # The three mean different things to the person who filed them -- open is still
+        # waiting on the RA, reviewed is a ruling that went your way, closed is done
+        # with -- and a single list sorted by date buried the ones still outstanding
+        # among months of settled ones.
+        by_status = {name: [r for r in reports if r['Status'] == name]
+                     for name in ('open', 'reviewed', 'closed')}
+        # Anything with a status outside the three (there should be none) still has to
+        # appear somewhere rather than vanishing out of the list.
+        other = [r for r in reports
+                 if r['Status'] not in by_status]
+
+        if not reports:
+            st.markdown(":gray[*No reports yet*]")
+        else:
+            st.caption(
+                "**Open** is still waiting on your RA. **Reviewed** means they agreed "
+                "with you. **Closed** is settled either way."
+            )
+            tab_names = ('open', 'reviewed', 'closed')
+            tabs = st.tabs([
+                f"{REPORT_STATUS_BADGES[name][0]} ({len(by_status[name])})"
+                for name in tab_names
+            ] + ([f"Other ({len(other)})"] if other else []))
+
+            for tab, name in zip(tabs, tab_names):
+                with tab:
+                    if not by_status[name]:
+                        st.markdown(f":gray[*Nothing {name}.*]")
+                        continue
+                    with st.container(height=440):
+                        for report in by_status[name]:
+                            render_report_row(report)
+
+            if other:
+                with tabs[-1], st.container(height=440):
+                    for report in other:
+                        render_report_row(report)
 
 with new_report_col:
     with st.container(border=True):
@@ -163,7 +197,14 @@ with new_report_col:
                 format_func=format_task_option,
                 help="Which of your roommates' overdue chores wasn't done?",
             )
-            details = st.text_area("Other details...", label_visibility="collapsed", placeholder="Other details...")
+            # Keyed on the draft, which is discarded once a report is filed. Without a
+            # key the box kept its text through the rerun, so the next report opened
+            # pre-filled with the reason for the last one -- against a different chore.
+            details = st.text_area(
+                "Other details...", label_visibility="collapsed",
+                placeholder="Other details...",
+                key=f"report_details_{draft_time.isoformat()}",
+            )
 
             if st.button("Create Report", type="primary", use_container_width=True):
                 # 409 covers the rules the server owns: reporting yourself, reporting
@@ -182,7 +223,7 @@ with new_report_col:
                     st.warning((body or {}).get("error", "That chore can't be reported."))
 
 with st.container(border=True):
-    st.subheader("Reports This Week")
+    st.subheader("Your reports this week")
 
     week_start = today - timedelta(days=today.weekday())  # Monday
     week_days = [week_start + timedelta(days=i) for i in range(7)]

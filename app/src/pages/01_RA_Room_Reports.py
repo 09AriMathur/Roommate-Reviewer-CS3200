@@ -67,89 +67,167 @@ def format_score(score):
 
 RA_ID = st.session_state.get('user_id')
 
-st.write('#### Reports on your rooms')
-st.caption(
-    "A resident filed these about a chore in one of your rooms. Upholding one marks "
-    "that chore missed, which is what moves the resident's completion rate and their "
-    "strike count."
-)
+# Two things land on an RA's desk and both are rulings, so they sit under one heading as
+# tabs rather than as two stacked walls of cards.
+open_appeals = api_get(f"/request/requests?ra_id={RA_ID}&status=open") or []
+appeals = [r for r in open_appeals if r['Request_Type'] in ('dispute', 'expunction')]
 
-report_filter = st.radio(
-    "Show", ["Open", "Reviewed", "Closed"], horizontal=True,
-    label_visibility="collapsed",
-)
+reports_tab, appeals_tab = st.tabs([
+    "Reports", f"Appeals ({len(appeals)})",
+])
 
-reports = api_get(
-    f"/room_report/room_reports?ra_id={RA_ID}&status={report_filter.lower()}"
-) or []
+with reports_tab:
+    st.write('#### Reports waiting on you')
+    st.caption(
+        "One resident says another skipped a chore. Yours is the ruling. **Uphold** if you "
+        "agree with them -- the chore goes down as missed, which is what moves the "
+        "resident's completion rate and their strike count. **Dismiss** if you do not, and "
+        "the chore is left alone. Either way the report stops counting as a strike against "
+        "them."
+    )
 
-if not reports:
-    st.success(f"No {report_filter.lower()} reports on your rooms.")
+    report_filter = st.radio(
+        "Show", ["Open", "Reviewed", "Closed"], horizontal=True,
+        label_visibility="collapsed",
+    )
 
-for report in reports:
-    report_id = report['ReportID']
-    accused = f"{report.get('accused_first') or '?'} {report.get('accused_last') or ''}".strip()
-    filer = f"{report.get('filer_first') or '?'} {report.get('filer_last') or ''}".strip()
-    label, color = REPORT_STATUS_BADGES.get(report['Status'],
-                                            (report['Status'].title(), 'gray'))
+    reports = api_get(
+        f"/room_report/room_reports?ra_id={RA_ID}&status={report_filter.lower()}"
+    ) or []
 
-    def when(raw):
-        return parsedate_to_datetime(raw).strftime('%b %d, %Y') if raw else None
+    if not reports:
+        st.success(f"No {report_filter.lower()} reports on your rooms.")
+    else:
+        st.caption(f"{len(reports)} {report_filter.lower()}, oldest last.")
 
-    with st.container(border=True):
-        head_col, badge_col = st.columns([4, 1])
-        head_col.write(
-            f"**{report.get('Task_Name') or 'Report'}** — {accused}, "
-            f"Room {report.get('Room_Number')}"
-        )
-        badge_col.badge(label, color=color)
+    # A busy RA can have a dozen open reports, and an unbounded stack of them pushed the
+    # rooms overview and the room lookup so far down the page they read as missing.
+    report_list = st.container(height=520) if len(reports) > 3 else st.container()
 
-        st.caption(
-            f"Filed by {filer} on {when(report.get('Time_Reported'))}"
-            + (f" · chore was due {when(report.get('due_date'))}"
-               if report.get('due_date') else "")
-            + (f" · reviewed {when(report.get('Reviewed_At'))}"
-               if report.get('Reviewed_At') else "")
-        )
-        st.write(report.get('Description') or "_No description given_")
+    for report in reports:
+        report_id = report['ReportID']
+        accused = f"{report.get('accused_first') or '?'} {report.get('accused_last') or ''}".strip()
+        filer = f"{report.get('filer_first') or '?'} {report.get('filer_last') or ''}".strip()
+        label, color = REPORT_STATUS_BADGES.get(report['Status'],
+                                                (report['Status'].title(), 'gray'))
 
-        if report['Status'] == 'open':
-            # The chore's own state decides what upholding can mean. One already
-            # finished cannot be marked missed without taking the credit back off
-            # whoever did it, so that button goes away rather than silently doing
-            # something different from what it says.
-            already_settled = report.get('task_status') in ('done', 'missed')
-            if report.get('task_status') == 'done':
-                st.caption("This chore has since been marked done, so there is "
-                           "nothing left to mark missed.")
-            elif report.get('task_status') == 'missed':
-                st.caption("This chore is already marked missed.")
+        def when(raw):
+            return parsedate_to_datetime(raw).strftime('%b %d, %Y') if raw else None
 
-            uphold_col, dismiss_col, _ = st.columns([1, 1, 2])
-            if uphold_col.button(
-                    "Uphold", key=f"uphold_{report_id}", type="primary",
-                    use_container_width=True, disabled=already_settled,
-                    help="Agree the chore was skipped and mark it missed."):
-                status, body = api_write(
-                    "PUT", f"/room_report/room_reports/{report_id}",
-                    {"Status": "reviewed", "uphold": True, "ra_id": RA_ID},
-                )
+        with report_list.container(border=True):
+            head_col, badge_col = st.columns([4, 1])
+            head_col.write(
+                f"**{report.get('Task_Name') or 'Report'}** — {accused}, "
+                f"Room {report.get('Room_Number')}"
+            )
+            badge_col.badge(label, color=color)
+
+            st.caption(
+                f"Filed by {filer} on {when(report.get('Time_Reported'))}"
+                + (f" · chore was due {when(report.get('due_date'))}"
+                   if report.get('due_date') else "")
+                + (f" · reviewed {when(report.get('Reviewed_At'))}"
+                   if report.get('Reviewed_At') else "")
+            )
+            st.write(report.get('Description') or "_No description given_")
+
+            if report['Status'] == 'open':
+                # Upholding is the ruling: you agree with the resident who filed it. Marking
+                # the chore missed is the consequence, and only applies if the chore is still
+                # open. Those were run together before, so a report about a chore that was
+                # already missed had Uphold greyed out -- the RA could not agree with a
+                # report they had not yet ruled on, only close it.
+                chore_status = report.get('task_status')
+                stale = chore_status == 'done'
+
+                if stale:
+                    st.caption(
+                        ":gray[Marked done since this was filed, so there is nothing to "
+                        "uphold. Dismiss it, or reopen it if you think it was flipped to "
+                        "avoid the strike.]"
+                    )
+                elif chore_status == 'missed':
+                    st.caption(
+                        ":gray[Already marked missed. Upholding records that you agree with "
+                        "the report; the chore itself does not change again.]"
+                    )
+
+                uphold_col, dismiss_col, _ = st.columns([1, 1, 2])
+                if uphold_col.button(
+                        "Uphold", key=f"uphold_{report_id}", type="primary",
+                        use_container_width=True, disabled=stale,
+                        help="Agree the chore was skipped. Marks it missed if it is still open."):
+                    status, body = api_write(
+                        "PUT", f"/room_report/room_reports/{report_id}",
+                        {"Status": "reviewed", "uphold": True, "ra_id": RA_ID},
+                    )
+                    if status == 200:
+                        if (body or {}).get('chore_marked_missed'):
+                            st.toast(f"{accused}'s chore marked missed.")
+                        st.rerun()
+
+                if dismiss_col.button(
+                        "Dismiss", key=f"dismiss_{report_id}", use_container_width=True,
+                        help="Close it without marking the chore down."):
+                    status, _ = api_write("PUT", f"/room_report/room_reports/{report_id}",
+                                          {"Status": "closed", "ra_id": RA_ID})
+                    if status == 200:
+                        st.rerun()
+            else:
+                if st.button("Reopen", key=f"reopen_{report_id}"):
+                    status, _ = api_write("PUT", f"/room_report/room_reports/{report_id}",
+                                          {"Status": "open", "ra_id": RA_ID})
+                    if status == 200:
+                        st.rerun()
+
+
+with appeals_tab:
+    st.write('#### Appeals waiting on you')
+    st.caption(
+        "A resident is contesting the record rather than reporting one. A **dispute** "
+        "says a chore was marked missed unfairly; approving it puts the chore back to "
+        "open and takes the mark off their count. An **expunction** asks for a strike to "
+        "come off; approving it closes that report. Roommates cannot decide either of "
+        "these -- the record is yours."
+    )
+
+    if not appeals:
+        st.success("No appeals waiting on you.")
+
+    for appeal in appeals:
+        appeal_id = appeal['Request_ID']
+        who = f"{appeal.get('First_Name', '')} {appeal.get('Last_Name', '')}".strip()
+
+        with st.container(border=True):
+            head_col, badge_col = st.columns([4, 1])
+            head_col.write(f"**{who}** — Room {appeal.get('Room_Number')}")
+            badge_col.badge(appeal['Request_Type'].title(), color="orange")
+
+            st.write(appeal.get('Reason') or "_No reason given_")
+            if appeal.get('given_name'):
+                st.caption(f"About the chore: {appeal['given_name']}")
+
+            approve_col, reject_col, _ = st.columns([1, 1, 2])
+            if approve_col.button("Approve", key=f"appeal_ok_{appeal_id}",
+                                  type="primary", use_container_width=True):
+                status, body = api_write("PUT", f"/request/requests/{appeal_id}",
+                                         {"Status": "resolved"})
                 if status == 200:
-                    if (body or {}).get('chore_marked_missed'):
-                        st.toast(f"{accused}'s chore marked missed.")
+                    # The API answers with the effect it carried out, or None when the
+                    # appeal named nothing left to act on -- a strike already cleared by
+                    # an earlier ruling, say. `.get('effect', 'Approved')` read that None
+                    # as a value rather than a default and called .capitalize() on it,
+                    # which is the error an RA saw when approving a second appeal about
+                    # one report.
+                    effect = (body or {}).get('effect')
+                    st.toast(effect.capitalize() if effect
+                             else "Approved. Nothing was left to clear on this one.")
                     st.rerun()
 
-            if dismiss_col.button(
-                    "Dismiss", key=f"dismiss_{report_id}", use_container_width=True,
-                    help="Close it without marking the chore down."):
-                status, _ = api_write("PUT", f"/room_report/room_reports/{report_id}",
-                                      {"Status": "closed", "ra_id": RA_ID})
-                if status == 200:
-                    st.rerun()
-        else:
-            if st.button("Reopen", key=f"reopen_{report_id}"):
-                status, _ = api_write("PUT", f"/room_report/room_reports/{report_id}",
-                                      {"Status": "open", "ra_id": RA_ID})
+            if reject_col.button("Reject", key=f"appeal_no_{appeal_id}",
+                                 use_container_width=True):
+                status, _ = api_write("PUT", f"/request/requests/{appeal_id}",
+                                      {"Status": "rejected"})
                 if status == 200:
                     st.rerun()
 

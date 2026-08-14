@@ -4,9 +4,10 @@ from email.utils import parsedate_to_datetime
 import altair as alt
 import pandas as pd
 import streamlit as st
-from modules.api import api_get
+from modules.api import api_get, api_write
 from modules.labels import (INTERVENTION_STATUS_BADGES, REPORT_STATUS_BADGES,
-                            REQUEST_IN_FLIGHT, by_due_date, chore_state, to_due_date)
+                            REQUEST_IN_FLIGHT, REQUEST_STATUS_COLORS, by_due_date,
+                            chore_state, to_due_date)
 from modules.nav import SideBarLinks
 
 st.set_page_config(layout='wide')
@@ -179,8 +180,8 @@ with main:
     # ---- The strikes themselves ----------------------------------------------
     st.write("### Reports naming you")
     st.caption(
-        "A strike is an open report about a chore assigned to you. Ask for one to be "
-        "cleared and your roommates or RA decide."
+        "A strike is an open report about a chore assigned to you. Three of them and "
+        "it reaches your RA. Only your RA can clear one."
     )
 
     all_reports = api_get(f"/room_report/users/{USER_ID}/room_reports",
@@ -225,19 +226,37 @@ with main:
                 st.caption("This report is already closed out.")
                 continue
 
-            if st.button("Ask for this to be cleared", key=f"expunge_{report_id}",
-                         type="primary"):
-                # Requests carry no direct report foreign key from this side -- the
-                # link is made when the request is resolved -- so the report is named
-                # in the reason text.
-                st.session_state['prefill_request'] = {
-                    "type": "expunction",
-                    "reason": (
-                        f"Requesting report #{report_id} "
-                        f"({detail.get('Description') or 'no description'}) be cleared."
+            st.caption(
+                "Your RA decides this one. If they agree, the report closes and the "
+                "strike comes off."
+            )
+
+            # One appeal per strike. Asking twice does not make an RA rule twice -- it
+            # used to put a second copy on their desk that pointed at nothing, so
+            # approving it cleared no strike and errored on the way out.
+            if report.get('appeal_status') in REQUEST_IN_FLIGHT:
+                st.info("You have already asked for this one. Your RA still has it.")
+            elif st.button("Ask for this to be cleared", key=f"expunge_{report_id}",
+                           type="primary"):
+                # Filed straight from here and pointed at the report it is about in the
+                # same call, so the appeal and the strike it names cannot come apart.
+                # 409 is the server saying this strike already has an appeal in flight,
+                # or has been ruled on since the page loaded.
+                status, body = api_write("POST", "/request/requests", {
+                    "Request_Type": "expunction",
+                    "Requested_By_UserID": USER_ID,
+                    "ReportID": report_id,
+                    "Reason": (
+                        f"Asking for this strike to be cleared: "
+                        f"{detail.get('Description') or 'no description given'}"
                     ),
-                }
-                st.switch_page('pages/03_My_Requests.py')
+                }, expected=(409,))
+                if status == 201:
+                    st.toast("Sent to your RA.")
+                    st.rerun()
+                elif status == 409:
+                    st.warning((body or {}).get(
+                        "error", "That strike cannot be appealed right now."))
 
     # Reports an RA has already ruled on. They no longer count against the strike track,
     # but they are the record of what happened, so they stay readable.
@@ -280,8 +299,26 @@ with side:
                if r['Status'] in REQUEST_IN_FLIGHT]
     if not pending:
         st.caption("No requests waiting on a decision.")
-    for req in pending[:5]:
-        st.write(f"- {req['Request_Type'].replace('_', ' ').title()}")
+    else:
+        st.caption("Longest waiting first — these are the ones to chase.")
+
+    # A bare type told a resident nothing: five bullets reading "Extension, Expunction,
+    # Dispute, Swap, Extension" name the form that was filled in, not what was asked for
+    # or how long it has been sitting. Oldest first, because the useful question here is
+    # which one has been ignored longest.
+    for req in sorted(pending, key=lambda r: to_date(r['Created_At']) or today)[:5]:
+        filed = to_date(req.get('Created_At'))
+        waited = (today - filed).days if filed else None
+        with st.container(border=True):
+            type_col, age_col = st.columns([2, 1])
+            type_col.badge(req['Request_Type'].replace('_', ' ').title(),
+                           color=REQUEST_STATUS_COLORS.get(req['Status'], "gray"))
+            if waited is not None:
+                age_col.caption("today" if waited == 0 else f"{waited}d ago")
+            st.caption(req.get('Reason') or "_No reason given_")
+            if req['Status'] == 'in_progress':
+                st.caption(":gray[Someone said they would sort this out and has not "
+                           "decided it yet.]")
 
     st.write("### Away dates")
     away = api_get(f"/away/users/{USER_ID}/away", quiet=True) or []

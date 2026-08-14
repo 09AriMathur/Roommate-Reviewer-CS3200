@@ -161,19 +161,22 @@ def create_new_room_report():
                           "incomplete yet.")
             return jsonify({"error": detail}), 409
 
-        # One open report per chore per filer. Without this the same person can press
-        # the button three times on one chore and push the assignee to the RA
-        # escalation threshold over a single missed job.
+        # One report per chore per filer, ever -- not one *open* report. Checking only
+        # for open ones meant that the moment an RA ruled, the chore became reportable
+        # again by the same person, so a resident could refile the instant a report was
+        # dismissed and keep the strike alive against a ruling that went against them.
+        # A second opinion on the same chore has to come from a different roommate.
         cursor.execute(
             """
                 SELECT ReportID FROM Room_Reports
-                WHERE TaskID = %s AND UserID = %s AND Status = 'open'
+                WHERE TaskID = %s AND UserID = %s
             """,
             (data["TaskID"], data["UserID"]),
         )
         if cursor.fetchone():
             return jsonify({
-                "error": f"You already have an open report on \"{task['Task_Name']}\"."
+                "error": f"You have already reported \"{task['Task_Name']}\". "
+                         "A chore can only be reported once by the same person."
             }), 409
 
         query = """
@@ -384,19 +387,27 @@ def get_user_room_reports(user_id):
 
         status = request.args.get("status")
 
+        # The appeal a resident has already filed against a report travels with it.
+        # Without it My Standing had no way to tell an un-appealed strike from one whose
+        # appeal is sitting on the RA's desk, so it offered the button either way and a
+        # resident could ask for the same strike to be cleared over and over.
         if role == "filed":
             query = """
-                        SELECT rp.*, t.Task_Name, t.due_date, t.Assigned_UserID
+                        SELECT rp.*, t.Task_Name, t.due_date, t.Assigned_UserID,
+                               ap.Status AS appeal_status, ap.Request_Type AS appeal_type
                         FROM Room_Reports rp
-                        LEFT JOIN Tasks t ON rp.TaskID = t.Task_ID
+                        LEFT JOIN Tasks t     ON rp.TaskID = t.Task_ID
+                        LEFT JOIN Requests ap ON ap.Request_ID = rp.RequestID
                         WHERE rp.UserID = %s
                     """
         else:
-            # INNER JOIN, not LEFT: a report with no task has nobody it can name
+            # INNER JOIN on Tasks, not LEFT: a report with no task has nobody it can name
             query = """
-                        SELECT rp.*, t.Task_Name, t.due_date, t.Assigned_UserID
+                        SELECT rp.*, t.Task_Name, t.due_date, t.Assigned_UserID,
+                               ap.Status AS appeal_status, ap.Request_Type AS appeal_type
                         FROM Room_Reports rp
-                        JOIN Tasks t ON rp.TaskID = t.Task_ID
+                        JOIN      Tasks t     ON rp.TaskID = t.Task_ID
+                        LEFT JOIN Requests ap ON ap.Request_ID = rp.RequestID
                         WHERE t.Assigned_UserID = %s
                     """
         params = [user_id]

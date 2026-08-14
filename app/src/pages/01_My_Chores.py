@@ -1,4 +1,3 @@
-from collections import OrderedDict
 from datetime import date, timedelta
 
 import streamlit as st
@@ -186,9 +185,9 @@ def ask_about(task):
             st.error("Give a reason so your roommates know what they're deciding on.")
             return
 
-        # Unlike the seeded disputes, which challenge a report and carry no task, a
-        # dispute raised from a chore is about that chore's incomplete mark, so the
-        # Task_ID is set here for all three types.
+        # All three types here are about the chore this dialog was opened from -- a
+        # dispute contests that chore's missed mark -- so Task_ID is set on each of them.
+        # Only an expunction, filed from My Standing against a report, carries none.
         payload = {
             "Request_Type": request_type,
             "Requested_By_UserID": USER_ID,
@@ -198,9 +197,16 @@ def ask_about(task):
         if proposed:
             payload["Proposed_Due_Date"] = proposed.strftime("%Y-%m-%d")
 
-        status, _ = api_write("POST", "/request/requests", payload)
+        # 409 is the server saying this chore already has a request of this kind waiting
+        # on a decision. That is a normal thing to run into from here -- the Ask button
+        # sits on every chore whether or not you have asked about it before -- so it
+        # reads as a note rather than a failure.
+        status, body = api_write("POST", "/request/requests", payload,
+                                 expected=(409,))
         if status == 201:
             st.rerun()
+        elif status == 409:
+            st.warning((body or {}).get("error", "That request has already been filed."))
 
 
 def render_task(task, can_complete=False, can_ask=False):
@@ -290,70 +296,182 @@ with done_tab:
         render_task(task)
 
 
-# ---- The rotation itself ---------------------------------------------------------
 
-# "Created" used to be a fifth tab here, which is what made this page unreadable: it
-# listed chores this resident wrote for their roommates alongside three tabs about
-# chores they owe, so a resident with none of their own missed chores still saw missed
-# chores on the page. The suite's chores belong to the suite, so they live under their
-# own heading, with the name of whoever is holding each one.
-st.write("### The suite's rotation")
+
+# ---- Missed chores the room can still cover -------------------------------------
+
+# A missed chore is a mark on somebody's record, and that mark is permanent -- but the
+# room still needs the thing done. Covering creates a *fresh* chore for whoever
+# volunteers rather than reassigning the missed one: reassigning would carry the miss
+# across to the volunteer and wipe it from the person who actually earned it.
+st.write("### Needs covering")
 
 dorm_id = user.get('DormID')
 room_number = user.get('Room_Number')
 room_tasks = (api_get(f"/room/dorms/{dorm_id}/rooms/{room_number}/tasks", quiet=True)
               if dorm_id is not None and room_number is not None else None) or []
 
-if not room_tasks:
+# A chore name already open in the room is either the next turn coming round or a cover
+# somebody has taken, so it does not need covering again.
+open_names = {t['Task_Name'] for t in room_tasks
+              if t['status'] in ('todo', 'in_progress')}
+
+# Your own missed chores are not here: the mark is yours and covering your own would be
+# marking your own homework. This is what a roommate can do about a miss besides report it.
+theirs_missed = [t for t in room_tasks
+                 if t['status'] == 'missed' and t['Assigned_UserID'] != USER_ID]
+
+uncovered = [t for t in theirs_missed if t['Task_Name'] not in open_names]
+
+# The same chore missed twice is two marks on a record but one job for the room, so the
+# rows are folded by name -- the oldest miss leads, and the count says how many there
+# were. Folding them silently was why this list could show fewer chores than the Missed
+# column of the chart above, with nothing on the page accounting for the difference.
+covering = {}
+for task in by_due_date(uncovered):
+    covering.setdefault(task['Task_Name'], []).append(task)
+
+# What the two rules above took out. Both are deliberate, and neither was visible: a
+# resident counting missed chores on the suite chart and then counting cards here had no
+# way to know why the two numbers disagreed.
+back_on_board = sorted({t['Task_Name'] for t in theirs_missed} & open_names)
+mine_missed = sum(1 for t in room_tasks
+                  if t['status'] == 'missed' and t['Assigned_UserID'] == USER_ID)
+
+if not uncovered:
+    st.caption("Nothing outstanding in the room that isn't already on someone's list.")
+else:
+    st.caption(
+        "Chores a roommate was marked down for. The mark stays on their record either "
+        "way -- covering one just means the room gets it done."
+    )
+
+if back_on_board or mine_missed:
+    hidden = []
+    if back_on_board:
+        hidden.append(
+            f"{len(back_on_board)} already back on the board this rotation "
+            f"({', '.join(back_on_board)})"
+        )
+    if mine_missed:
+        hidden.append(
+            f"{mine_missed} of your own, which only you can answer for"
+        )
+    st.caption(f":gray[Not listed: {'; '.join(hidden)}.]")
+
+for name, group in sorted(covering.items(), key=lambda kv: to_due_date(kv[1][0]) or today):
+    task = group[0]
+    due = to_due_date(task)
+    with st.container(border=True):
+        name_col, who_col, act_col = st.columns([3, 2, 2])
+        name_col.write(task['Task_Name'])
+        who_col.caption(
+            f"{task.get('First_Name', 'A roommate')} · missed"
+            + (f" {due.strftime('%b %d')}" if due else "")
+            + (f" · {len(group)} times" if len(group) > 1 else "")
+        )
+        if act_col.button("Cover this", key=f"cover_{task['Task_ID']}",
+                          use_container_width=True):
+            status, _ = api_write("POST", "/task/tasks", {
+                "Task_Name": task['Task_Name'],
+                "due_date": (today + timedelta(days=3)).isoformat(),
+                "Created_UserID": USER_ID,
+                "Assigned_UserID": USER_ID,
+            })
+            if status == 201:
+                st.toast(f"{task['Task_Name']} is yours, due in three days.")
+                st.rerun()
+
+
+# ---- The rotation, as a week-by-week chart --------------------------------------
+
+# "Created" used to be a fifth tab here, which is what made this page unreadable: it
+# listed chores this resident wrote for their roommates alongside three tabs about chores
+# they owe, so a resident with none of their own missed chores still saw missed chores on
+# the page.
+#
+# What replaced it is the shape the rotation actually has. A rotation is not stored
+# anywhere -- each turn is a plain Tasks row and nothing links one week to the next -- so
+# it can only be seen by laying the room's chores out one week per row, one roommate per
+# column. Read down a column and you have one person's record; read across and you have
+# whose turn it was. A blank cell is a week that person carried nothing.
+st.write("### The suite's rotation")
+
+# How much of the chart to show at once. Far enough back to see the pattern hold, far
+# enough forward to see whose turn is coming.
+WEEKS_BACK, WEEKS_AHEAD = 4, 3
+
+
+def week_of(day):
+    """The Monday that starts the week a date falls in."""
+    return day - timedelta(days=day.weekday())
+
+
+if not roster or not room_tasks:
     st.caption("No chores on the board for this room yet.")
 else:
     st.caption(
-        "Each chore and the roommates it has passed through, oldest first. This is what "
-        "the rotation looks like from the outside."
+        "One week per row, one roommate per column. Each cell is the chore that person "
+        "was given that week -- an empty cell means the chart gave them nothing that "
+        "week, not that they skipped anything."
     )
+    with st.expander("What the colours mean"):
+        st.markdown(
+            "- **To Do** — assigned, deadline still ahead.\n"
+            "- **In Progress** — started, deadline still ahead.\n"
+            "- **Overdue** — past its deadline and still open. It can still be finished, "
+            "and finishing it is the only way it stops counting against you. Your "
+            "roommates can file a report on it from here on.\n"
+            "- **Missed** — a roommate reported it and your RA agreed. This is final: "
+            "it stays on your record, it cannot be marked done, and **nobody else "
+            "picks it up**. The next turn of that chore goes to the next person as "
+            "normal. If you think it was unfair, contest it from the Missed tab.\n"
+            "- **Done** — finished."
+        )
 
-    # A rotation is one chore name coming round again on a different person, which is
-    # exactly how the rows are shaped -- so grouping by name recovers it without the
-    # schema having to record it.
-    rotations = OrderedDict()
-    for task in by_due_date(room_tasks):
-        rotations.setdefault(task['Task_Name'], []).append(task)
+    # Chores land on scattered weekdays, so they are grouped by the week they fall in
+    # rather than by the day -- the rotation turns over weekly, not daily.
+    by_week = {}
+    for task in room_tasks:
+        due = to_due_date(task)
+        if due is None:
+            continue
+        by_week.setdefault(week_of(due), {}).setdefault(task['Assigned_UserID'], []).append(task)
 
-    def next_in_roster(after_user_id):
-        """Whoever follows this resident in the room's order, wrapping at the end."""
-        ids = [u['UserID'] for u in roster]
-        if after_user_id not in ids:
-            return None
-        return roster[(ids.index(after_user_id) + 1) % len(ids)]
+    this_week = week_of(today)
+    weeks = sorted(w for w in by_week
+                   if this_week - timedelta(weeks=WEEKS_BACK)
+                   <= w <= this_week + timedelta(weeks=WEEKS_AHEAD))
 
-    # Chores whose next turn is soonest are the ones worth reading first.
-    def soonest_open(instances):
-        upcoming = [to_due_date(t) for t in instances
-                    if t['status'] in ('todo', 'in_progress') and to_due_date(t)]
-        return min(upcoming) if upcoming else date.max
+    if not weeks:
+        st.caption("Nothing scheduled in this stretch of weeks.")
+    else:
+        widths = [1] + [3] * len(roster)
 
-    for name, instances in sorted(rotations.items(), key=lambda kv: soonest_open(kv[1])):
-        with st.container(border=True):
-            st.markdown(f"**{name}**")
+        header = st.columns(widths, vertical_alignment="bottom")
+        header[0].caption("Week of")
+        for col, member in zip(header[1:], roster):
+            mine = member['UserID'] == USER_ID
+            col.markdown(f"**{'You' if mine else member['First_Name']}**")
 
-            # Four turns is enough to read the cycle without the page becoming a wall.
-            shown = instances[-4:]
-            cols = st.columns(len(shown) + 1)
-            for col, task in zip(cols, shown):
-                label, color = chore_state(task, today)
-                due = to_due_date(task)
-                who = ("You" if task['Assigned_UserID'] == USER_ID
-                       else task.get('First_Name', 'Unassigned'))
-                with col:
-                    st.caption(f"{who} · {due.strftime('%b %d') if due else 'no date'}")
-                    st.badge(label, color=color)
+        for week_start in weeks:
+            is_now = week_start == this_week
+            with st.container(border=is_now):
+                cells = st.columns(widths, vertical_alignment="top")
+                cells[0].markdown(
+                    f"**{week_start.strftime('%b %d')}**" if is_now
+                    else week_start.strftime('%b %d')
+                )
+                if is_now:
+                    cells[0].caption("this week")
 
-            # Nobody holds this chore right now, so say whose turn it would be. The
-            # rotation is only implied by the rows until someone creates the next one.
-            open_now = [t for t in instances if t['status'] in ('todo', 'in_progress')]
-            if not open_now:
-                nxt = next_in_roster(instances[-1]['Assigned_UserID'])
-                if nxt:
-                    who = "you" if nxt['UserID'] == USER_ID else nxt['First_Name']
-                    cols[-1].caption("Next up")
-                    cols[-1].badge(who.title(), color="violet")
+                for col, member in zip(cells[1:], roster):
+                    theirs = by_week[week_start].get(member['UserID'], [])
+                    if not theirs:
+                        col.caption("—")
+                        continue
+                    for task in by_due_date(theirs):
+                        due = to_due_date(task)
+                        label, color = chore_state(task, today)
+                        col.write(task['Task_Name'])
+                        col.badge(f"{due.strftime('%a %d')} · {label}", color=color)

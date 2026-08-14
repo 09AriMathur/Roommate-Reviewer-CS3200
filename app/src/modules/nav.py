@@ -192,7 +192,6 @@ SESSION_KEYS = (
     "first_name",
     "login_time",
     "report_draft_time",
-    "prefill_request",
 )
 
 

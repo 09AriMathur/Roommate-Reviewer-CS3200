@@ -8,8 +8,7 @@ SideBarLinks()
 # A Back control in the LEFT pane (sidebar) that returns the user to their own
 # home page rather than the login screen. Falls back to login if no role is set.
 _home_by_role = {
-    "user": "pages/00_Resident_Home.py",
-    "student": "pages/00_Resident_Home.py",
+    "resident": "pages/00_Resident_Home.py",
     "ra": "pages/00_RA_Home.py",
     "admin": "pages/20_Admin_Home.py",
 }
@@ -35,11 +34,12 @@ st.markdown(
 st.write("### Who uses it")
 
 st.caption(
-    "The two Resident personas see the identical set of pages -- the "
-    "difference is entirely in the data behind them."
+    "Four personas across three roles. The two Resident personas see the "
+    "identical set of pages -- the difference is entirely in the data behind "
+    "them."
 )
 
-roles = st.columns(3, gap='medium', border=True)
+roles = st.columns(4, gap='medium', border=True)
 
 with roles[0]:
     st.markdown("**Resident, on track**")
@@ -62,6 +62,13 @@ with roles[2]:
         "interventions, and sets the rules."
     )
 
+with roles[3]:
+    st.markdown("**System Administrator**")
+    st.caption(
+        "Building-wide oversight: user accounts, RA assignments, dorm "
+        "occupancy, and the activity log."
+    )
+
 st.write("### How it is built")
 
 st.markdown(
@@ -69,7 +76,7 @@ st.markdown(
     Three Docker containers:
 
     - **Streamlit** for the front end, one Python file per page
-    - **Flask** for the REST API, split into blueprints by resource
+    - **Flask** for the REST API, split into eleven blueprints by resource
     - **MySQL** for the database, seeded from `database-files/ddl.sql`
 
     The front end never touches the database directly. Every page goes through

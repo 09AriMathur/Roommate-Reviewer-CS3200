@@ -179,9 +179,15 @@ with main:
 
     # ---- The strikes themselves ----------------------------------------------
     st.write("### Reports naming you")
+    # The strike track counts distinct chores, not report rows -- see the DISTINCT in
+    # GET /room_report/users/<id>/standing. Saying "a strike is an open report" made
+    # this list look like it should be as long as the track is high, and in a triple,
+    # where both roommates report the same chore, it is longer.
     st.caption(
-        "A strike is an open report about a chore assigned to you. Three of them and "
-        "it reaches your RA. Only your RA can clear one."
+        "A strike is a chore of yours that an open report names. Two roommates "
+        "reporting the same chore is still one strike, so this list can be longer "
+        "than the track above. Three strikes and it reaches your RA, and only your "
+        "RA can clear one."
     )
 
     all_reports = api_get(f"/room_report/users/{USER_ID}/room_reports",
@@ -236,8 +242,10 @@ with main:
             # approving it cleared no strike and errored on the way out.
             if report.get('appeal_status') in REQUEST_IN_FLIGHT:
                 st.info("You have already asked for this one. Your RA still has it.")
-            elif st.button("Ask for this to be cleared", key=f"expunge_{report_id}",
-                           type="primary"):
+            # "this" was ambiguous next to a chore name -- it reads as clearing the
+            # chore, which is the other appeal. What comes off here is the strike.
+            elif st.button("Ask for this strike to be cleared",
+                           key=f"expunge_{report_id}", type="primary"):
                 # Filed straight from here and pointed at the report it is about in the
                 # same call, so the appeal and the strike it names cannot come apart.
                 # 409 is the server saying this strike already has an appeal in flight,

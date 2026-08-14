@@ -48,8 +48,11 @@ def pretty(value):
 
 st.title('My Requests')
 st.caption(
-    "Ask for an extension, offer a chore swap, dispute a report, or ask for an old "
-    "strike to be cleared."
+    # "dispute a report" was wrong and was the thing that made these two read as one:
+    # a dispute contests a *chore* being marked missed. It is an expunction that is
+    # about a report.
+    "Ask for an extension, offer a chore swap, contest a chore you were marked down "
+    "for, or ask for a strike on your record to be cleared."
 )
 
 my_requests = api_get(f"/request/users/{USER_ID}/requests")

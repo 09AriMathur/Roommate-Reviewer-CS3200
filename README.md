@@ -22,22 +22,26 @@ already attached.
 
 ## Who uses it
 
-The app ships with three personas. You pick one on the landing page — there is
-no real login, the buttons just set a role in the session.
+The app ships with four personas across three roles. You pick one on the landing
+page — there is no real login, the buttons just set a role in the session.
 
 | Persona | Role | What they do |
 | --- | --- | --- |
 | **Joshua Patel** | Resident | On track: chores done, no strikes, nothing overdue. |
 | **Frank Osei** | Resident falling behind | Behind on chores with open strikes and requests, so the same pages tell a very different story. |
 | **Carol Diaz** | Residence Advisor | Reviews reports across her rooms, tracks completion rates, manages interventions, and sets the rules. |
+| **Sam Reynolds** | System Administrator | Oversight across the whole building: user accounts, RA assignments, dorm occupancy, and the activity log. |
 
-Joshua and Frank are both Residents and see the identical set of nine pages —
-a shared home dashboard plus eight feature pages (This Week, Chore Reports,
-Ask My RA, Task History, My Chores, My Requests, Away Dates, My Standing).
-The two personas exist to show how differently those same pages read for a
-resident who is keeping up versus one who isn't, driven entirely by the data
-behind each seeded user. Carol, as the Residence Advisor, has her own home
-page plus four RA-only feature pages.
+Joshua and Frank are both Residents and share the identical set of seven pages —
+a home dashboard plus six feature pages (My Chores, Chore Reports, My Requests,
+Ask My RA, Away Dates, My Standing). The two personas exist to show how
+differently those same pages read for a resident who is keeping up versus one
+who isn't, driven entirely by the data behind each seeded user.
+
+Carol, as the Residence Advisor, has her own home page plus four RA-only feature
+pages (Room Reports, Performance, Interventions, Rules). Sam, as the System
+Administrator, has a home page plus four admin-only feature pages (Activity Log,
+User Accounts, Resident Advisors, Dorms & Occupancy).
 
 ## Architecture
 
@@ -51,8 +55,9 @@ Streamlit  ──HTTP──>  Flask API  ──SQL──>  MySQL
 
 - **`./app`** — Streamlit front end. One Python file per page in `app/src/pages/`,
   with the sidebar built by role in `app/src/modules/nav.py`.
-- **`./api`** — Flask REST API, split into blueprints by resource (users, rooms,
-  tasks, requests, room reports, RAs, rules, dorms, away dates).
+- **`./api`** — Flask REST API, split into eleven blueprints by resource (users,
+  rooms, tasks, requests, room reports, RAs, rules, dorms, away dates,
+  interventions, logs).
 - **`./database-files`** — `ddl.sql` creates the schema and seeds it. Any `.sql`
   file here runs automatically when the database container is **created**.
 - **`./docs`** — project documentation, including the REST route matrix.

@@ -204,40 +204,7 @@ def get_ra_interventions(ra_id):
         cursor.close()
 
 
-# Create a new intervention request filed by a student.
-# The RA is always looked up server-side from the student's own Users.RA
-# column rather than trusted from the request body, so a student can only
-# ever file against their own assigned RA.
-# Required fields: UserID, Description
-# Example: POST /ras/interventions with JSON body
-@ras.route("/ras/interventions", methods=["POST"])
-def create_intervention():
-    cursor = get_db().cursor(dictionary=True)
-    try:
-        data = request.get_json()
-
-        required_fields = ["UserID", "Description"]
-        for field in required_fields:
-            if field not in data:
-                return jsonify({"error": f"Missing required field: {field}"}), 400
-
-        cursor.execute("SELECT RA FROM Users WHERE UserID = %s", (data["UserID"],))
-        user = cursor.fetchone()
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-        if not user["RA"]:
-            return jsonify({"error": "User has no assigned RA"}), 400
-
-        query = """
-            INSERT INTO RA_Intervention (Description, Status, UserID, RA)
-            VALUES (%s, %s, %s, %s)
-        """
-        cursor.execute(query, (data["Description"], "pending", data["UserID"], user["RA"]))
-        get_db().commit()
-
-        return jsonify({"message": "Intervention created successfully", "RequestID": cursor.lastrowid}), 201
-    except Error as e:
-        current_app.logger.error(f'Database error in create_intervention: {e}')
-        return jsonify({"error": str(e)}), 500
-    finally:
-        cursor.close()
+# Filing and working an intervention now lives on its own blueprint, at
+# /intervention/interventions, which is where the RA's PUT lives too. Keeping the write
+# here as well would have left this blueprint with two POST routes and the intervention
+# lifecycle split across two places.

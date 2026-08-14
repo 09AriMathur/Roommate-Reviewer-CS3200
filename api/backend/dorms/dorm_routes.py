@@ -96,12 +96,21 @@ def get_dorm_stats(dorm_id):
         cursor.execute(query, (dorm_id,))
         request_row = cursor.fetchone()
 
+        # Room_Reports.UserID is who filed, not who was reported. Counting on it made
+        # this "reports written by people who live here", while the strike count on a
+        # resident's own page counts reports naming them -- two different numbers under
+        # labels that read the same. A report belongs to the room of the resident whose
+        # chore it is about, falling back to the filer's room when it names no chore.
         query = """
                     SELECT COUNT(*) AS total,
                            SUM(rp.Status = 'open') AS open_total
                     FROM Room_Reports rp
-                    JOIN Users u  ON rp.UserID = u.UserID
-                    JOIN Rooms rm ON u.DormID = rm.DormID AND u.Room_Number = rm.Room_Number
+                    JOIN      Users filer   ON filer.UserID = rp.UserID
+                    LEFT JOIN Tasks t       ON t.Task_ID = rp.TaskID
+                    LEFT JOIN Users accused ON accused.UserID = t.Assigned_UserID
+                    JOIN Rooms rm
+                      ON rm.DormID      = COALESCE(accused.DormID, filer.DormID)
+                     AND rm.Room_Number = COALESCE(accused.Room_Number, filer.Room_Number)
                     WHERE rm.DormID = %s
                 """
         cursor.execute(query, (dorm_id,))
@@ -115,9 +124,10 @@ def get_dorm_stats(dorm_id):
                            COUNT(DISTINCT rp.ReportID)   AS report_count,
                            COUNT(DISTINCT rq.Request_ID) AS request_count
                     FROM Rooms rm
-                    LEFT JOIN Users u        ON u.DormID = rm.DormID AND u.Room_Number = rm.Room_Number
-                    LEFT JOIN Room_Reports rp ON rp.UserID = u.UserID
-                    LEFT JOIN Requests rq     ON rq.Requested_By_UserID = u.UserID
+                    LEFT JOIN Users u     ON u.DormID = rm.DormID AND u.Room_Number = rm.Room_Number
+                    LEFT JOIN Tasks t     ON t.Assigned_UserID = u.UserID
+                    LEFT JOIN Room_Reports rp ON rp.TaskID = t.Task_ID
+                    LEFT JOIN Requests rq ON rq.Requested_By_UserID = u.UserID
                     WHERE rm.DormID = %s
                     GROUP BY rm.DormID, rm.Room_Number
                     ORDER BY report_count DESC, request_count DESC

@@ -14,6 +14,7 @@ from backend.user_away.user_away_routes import user_away
 from backend.dorms.dorm_routes import dorms
 from backend.rules.rule_routes import rules
 from backend.logs.log_routes import logs
+from backend.interventions.intervention_routes import interventions
 
 
 def create_app():
@@ -53,5 +54,6 @@ def create_app():
     app.register_blueprint(dorms, url_prefix="/dorm")
     app.register_blueprint(rules, url_prefix="/rule")
     app.register_blueprint(logs, url_prefix="/log")
+    app.register_blueprint(interventions, url_prefix="/intervention")
 
     return app

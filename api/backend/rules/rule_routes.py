@@ -100,6 +100,21 @@ def create_rule():
             if not cursor.fetchone():
                 return jsonify({"error": "User not found"}), 404
 
+        # An RA sets rules for the rooms they are responsible for. Both halves were
+        # checked to exist and neither was checked against the other, so an RA could
+        # write a house rule into any room in the building.
+        if (data.get("RA_ID") is not None
+                and data.get("DormID") is not None
+                and data.get("Room_Number") is not None):
+            cursor.execute(
+                "SELECT 1 FROM Rooms WHERE DormID = %s AND Room_Number = %s AND RA = %s",
+                (data["DormID"], data["Room_Number"], data["RA_ID"]),
+            )
+            if not cursor.fetchone():
+                return jsonify({
+                    "error": "That room is not one of this RA's rooms"
+                }), 403
+
         query = """
             INSERT INTO Rules (Descr, DormID, Room_Number, RA_ID, UserID)
             VALUES (%s, %s, %s, %s, %s)

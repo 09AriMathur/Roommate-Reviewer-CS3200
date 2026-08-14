@@ -8,6 +8,13 @@ from modules.nav import SideBarLinks
 st.set_page_config(layout='wide')
 SideBarLinks()
 
+# The sidebar only hides links; it does not stop another role from reaching
+# this URL. Without this, arriving without a session raised a KeyError on
+# first_name rather than saying the page was off limits.
+if st.session_state.get('role') != 'admin':
+    st.error('You do not have access to this page.')
+    st.stop()
+
 # All log routes live under the /log prefix (this admin's own blueprint)
 API = "http://web-api:4000/log"
 ADMIN_ID = st.session_state.get("user_id", 1)

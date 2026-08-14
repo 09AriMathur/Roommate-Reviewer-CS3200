@@ -4,12 +4,21 @@ logger = logging.getLogger(__name__)
 import pandas as pd
 import requests
 import streamlit as st
+from modules.api import api_write
+from modules.labels import INTERVENTION_STATUS_BADGES
 from modules.nav import SideBarLinks
 
 st.set_page_config(layout='wide')
 
 # Show appropriate sidebar links for the role of the currently logged in user
 SideBarLinks()
+
+# The sidebar only hides links; it does not stop another role from reaching
+# this URL. Without this, arriving without a session raised a KeyError on
+# first_name rather than saying the page was off limits.
+if st.session_state.get('role') != 'ra':
+    st.error('You do not have access to this page.')
+    st.stop()
 
 st.title('Intervention Manager')
 st.write(f"### Hi, {st.session_state['first_name']}.")
@@ -34,60 +43,74 @@ def api_get(path):
         return None
 
 
-def render_interventions(rows):
-    if rows:
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-    else:
-        st.info("No interventions here.")
+ra_id = st.session_state.get('user_id')
+
+# One call, scoped to this RA, with the resident's name and room already joined. The
+# page used to fetch every intervention for all 31 RAs and match ids in Python, so Carol
+# was reading the whole building's caseload to find her own.
+all_interventions = api_get(f"/intervention/interventions?ra_id={ra_id}") or []
+dorm_names = {d["DormID"]: d["Dorm_Name"] for d in (api_get("/dorm/dorms") or [])}
 
 
-ras = api_get("/ra/ras") or []
-users = api_get("/user/users") or []
-rooms = api_get("/room/rooms") or []
+def room_label(row):
+    if row.get("Room_Number") is None:
+        return "Unassigned"
+    return f"{dorm_names.get(row.get('DormID'), 'Dorm')} {row['Room_Number']}"
 
-if ras:
-    ra_names = {ra["RA_ID"]: f"{ra['First_Name']} {ra['Last_Name']}" for ra in ras}
-    dorm_names = {d["DormID"]: d["Dorm_Name"] for d in (api_get("/dorm/dorms") or [])}
-    # Rooms are keyed by (DormID, Room_Number), so a resident maps onto that pair.
-    room_key_of_user = {
-        u["UserID"]: (u["DormID"], u["Room_Number"]) for u in users
-    }
-    room_by_key = {(r["DormID"], r["Room_Number"]): r for r in rooms}
 
-    # RA_Intervention is only exposed per-RA, so gather every intervention by
-    # looping over each RA (no "all interventions" route exists)
-    all_interventions = []
-    for ra in ras:
-        all_interventions += api_get(f"/ra/ras/{ra['RA_ID']}/interventions") or []
+active = [i for i in all_interventions if i["Status"] in ACTIVE_STATUSES]
+closed = [i for i in all_interventions if i["Status"] not in ACTIVE_STATUSES]
 
-    active_rows = []
-    closed_rows = []
-    for i in all_interventions:
-        room = room_by_key.get(room_key_of_user.get(i["UserID"]))
-        room_label = (
-            f"{dorm_names.get(room['DormID'], 'Dorm')} {room['Room_Number']}"
-            if room else "Unassigned"
+st.write('#### Ongoing Interventions')
+st.caption(
+    "A resident asked you to step in. Move it to Active while you are working on it, "
+    "then Close it -- closing is what counts towards your settled total."
+)
+
+if not active:
+    st.success("Nothing ongoing on your rooms.")
+
+for i in active:
+    with st.container(border=True):
+        head, badge = st.columns([4, 1])
+        head.write(
+            f"**{i.get('First_Name', '')} {i.get('Last_Name', '')}** — {room_label(i)}"
         )
+        label, color = INTERVENTION_STATUS_BADGES.get(
+            i["Status"], (i["Status"].title(), "gray"))
+        badge.badge(label, color=color)
+        st.write(i.get("Description") or "_No description given_")
 
-        row = {
-            "ID": i["RequestID"],
-            "Description": i["Description"],
-            "Made By": ra_names.get(i["RA"], "Unknown"),
-            "Room": room_label,
-            "Status": i["Status"],
-        }
+        # Nothing here could write before this: the table had no PUT at all, so a case a
+        # resident filed stayed 'pending' however much work went into it.
+        act_col, close_col, _ = st.columns([1, 1, 2])
+        if i["Status"] == "pending" and act_col.button(
+                "Start working", key=f"activate_{i['RequestID']}",
+                use_container_width=True):
+            status, _ = api_write("PUT", f"/intervention/interventions/{i['RequestID']}",
+                                  {"Status": "active"})
+            if status == 200:
+                st.rerun()
 
-        if i["Status"] in ACTIVE_STATUSES:
-            active_rows.append(row)
-        else:
-            closed_rows.append(row)
+        if close_col.button("Close case", key=f"close_{i['RequestID']}",
+                            type="primary", use_container_width=True):
+            status, _ = api_write("PUT", f"/intervention/interventions/{i['RequestID']}",
+                                  {"Status": "closed"})
+            if status == 200:
+                st.rerun()
 
-    st.write('#### Ongoing Interventions')
-    render_interventions(active_rows)
+st.divider()
 
-    st.divider()
-
-    st.write('#### Closed Interventions')
-    render_interventions(closed_rows)
+st.write('#### Closed Interventions')
+if not closed:
+    st.caption("None closed yet.")
 else:
-    st.error("Could not load RA data from the API.")
+    st.dataframe(
+        pd.DataFrame([{
+            "ID": i["RequestID"],
+            "Resident": f"{i.get('First_Name', '')} {i.get('Last_Name', '')}".strip(),
+            "Room": room_label(i),
+            "Description": i["Description"],
+        } for i in closed]),
+        use_container_width=True, hide_index=True,
+    )

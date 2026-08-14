@@ -4,15 +4,17 @@ from email.utils import parsedate_to_datetime
 import altair as alt
 import pandas as pd
 import streamlit as st
-from modules.api import api_get
-from modules.labels import chore_state
+from modules.api import api_get, api_write
+from modules.labels import (INTERVENTION_STATUS_BADGES, REPORT_STATUS_BADGES,
+                            REQUEST_IN_FLIGHT, REQUEST_STATUS_COLORS, by_due_date,
+                            chore_state, to_due_date)
 from modules.nav import SideBarLinks
 
 st.set_page_config(layout='wide')
 
 SideBarLinks()
 
-if st.session_state.get('role') not in ('user', 'student'):
+if st.session_state.get('role') != 'resident':
     st.error('You do not have access to this page.')
     st.stop()
 
@@ -178,15 +180,21 @@ with main:
     # ---- The strikes themselves ----------------------------------------------
     st.write("### Reports naming you")
     st.caption(
-        "A strike is an open report about a chore assigned to you. Ask for one to be "
-        "cleared and your roommates or RA decide."
+        "A strike is an open report about a chore assigned to you. Three of them and "
+        "it reaches your RA. Only your RA can clear one."
     )
 
-    strikes = api_get(f"/room_report/users/{USER_ID}/room_reports",
-                      params={"role": "named"}, quiet=True) or []
+    all_reports = api_get(f"/room_report/users/{USER_ID}/room_reports",
+                          params={"role": "named"}, quiet=True) or []
+
+    # The strike track above counts open reports only. Listing every report of every
+    # status underneath it meant a resident with a clean slate still read a column of
+    # reports, and the reviewed and closed ones were never coming back.
+    strikes = [r for r in all_reports if r['Status'] == 'open']
+    settled = [r for r in all_reports if r['Status'] != 'open']
 
     if not strikes:
-        st.success("No reports name you. Nothing to clear.")
+        st.success("No open reports name you. Nothing to clear.")
 
     for report in strikes:
         report_id = report['ReportID']
@@ -218,19 +226,51 @@ with main:
                 st.caption("This report is already closed out.")
                 continue
 
-            if st.button("Ask for this to be cleared", key=f"expunge_{report_id}",
-                         type="primary"):
-                # Requests carry no direct report foreign key from this side -- the
-                # link is made when the request is resolved -- so the report is named
-                # in the reason text.
-                st.session_state['prefill_request'] = {
-                    "type": "expunction",
-                    "reason": (
-                        f"Requesting report #{report_id} "
-                        f"({detail.get('Description') or 'no description'}) be cleared."
+            st.caption(
+                "Your RA decides this one. If they agree, the report closes and the "
+                "strike comes off."
+            )
+
+            # One appeal per strike. Asking twice does not make an RA rule twice -- it
+            # used to put a second copy on their desk that pointed at nothing, so
+            # approving it cleared no strike and errored on the way out.
+            if report.get('appeal_status') in REQUEST_IN_FLIGHT:
+                st.info("You have already asked for this one. Your RA still has it.")
+            elif st.button("Ask for this to be cleared", key=f"expunge_{report_id}",
+                           type="primary"):
+                # Filed straight from here and pointed at the report it is about in the
+                # same call, so the appeal and the strike it names cannot come apart.
+                # 409 is the server saying this strike already has an appeal in flight,
+                # or has been ruled on since the page loaded.
+                status, body = api_write("POST", "/request/requests", {
+                    "Request_Type": "expunction",
+                    "Requested_By_UserID": USER_ID,
+                    "ReportID": report_id,
+                    "Reason": (
+                        f"Asking for this strike to be cleared: "
+                        f"{detail.get('Description') or 'no description given'}"
                     ),
-                }
-                st.switch_page('pages/03_My_Requests.py')
+                }, expected=(409,))
+                if status == 201:
+                    st.toast("Sent to your RA.")
+                    st.rerun()
+                elif status == 409:
+                    st.warning((body or {}).get(
+                        "error", "That strike cannot be appealed right now."))
+
+    # Reports an RA has already ruled on. They no longer count against the strike track,
+    # but they are the record of what happened, so they stay readable.
+    if settled:
+        with st.expander(f"Already settled ({len(settled)})"):
+            for report in settled:
+                label, color = REPORT_STATUS_BADGES.get(
+                    report['Status'], (report['Status'].title(), 'gray'))
+                reviewed = to_date(report.get('Reviewed_At'))
+                with st.container(border=True):
+                    st.write(report.get('Task_Name') or 'Report')
+                    st.badge(label, color=color)
+                    if reviewed:
+                        st.caption(f"Reviewed {reviewed.strftime('%b %d, %Y')}")
 
 
 # ---- Side panel: chores, requests, away, and the rules being measured against ----
@@ -241,27 +281,51 @@ with side:
             or {}).get('todo_tasks', [])
     if not todo:
         st.caption("Nothing outstanding.")
-    for task in todo[:5]:
-        due = to_date(task.get('due_date'))
-        label, _ = chore_state(task, today)
+    # Same five chores the landing page shows, in the same order, with the same colour.
+    # This rail used to take whatever five rows MySQL happened to return first and drop
+    # the state colour, so the two pages disagreed about what was next.
+    for task in by_due_date(todo)[:5]:
+        due = to_due_date(task)
+        label, color = chore_state(task, today)
         with st.container(border=True):
             st.write(task['Task_Name'])
-            if due:
-                st.caption(f"{label} · {due.strftime('%b %d')}")
+            st.badge(f"{label} · {due.strftime('%b %d')}" if due else label, color=color)
 
     # Shorter than the landing page's "Waiting on a decision" -- that heading wraps in
     # this narrower rail.
     st.write("### Pending requests")
-    pending = api_get(f"/request/users/{USER_ID}/requests",
-                      params={"status": "open"}, quiet=True) or []
+    pending = [r for r in (api_get(f"/request/users/{USER_ID}/requests", quiet=True)
+                           or [])
+               if r['Status'] in REQUEST_IN_FLIGHT]
     if not pending:
-        st.caption("No open requests.")
-    for req in pending[:5]:
-        st.write(f"- {req['Request_Type'].replace('_', ' ').title()}")
+        st.caption("No requests waiting on a decision.")
+    else:
+        st.caption("Longest waiting first — these are the ones to chase.")
+
+    # A bare type told a resident nothing: five bullets reading "Extension, Expunction,
+    # Dispute, Swap, Extension" name the form that was filled in, not what was asked for
+    # or how long it has been sitting. Oldest first, because the useful question here is
+    # which one has been ignored longest.
+    for req in sorted(pending, key=lambda r: to_date(r['Created_At']) or today)[:5]:
+        filed = to_date(req.get('Created_At'))
+        waited = (today - filed).days if filed else None
+        with st.container(border=True):
+            type_col, age_col = st.columns([2, 1])
+            type_col.badge(req['Request_Type'].replace('_', ' ').title(),
+                           color=REQUEST_STATUS_COLORS.get(req['Status'], "gray"))
+            if waited is not None:
+                age_col.caption("today" if waited == 0 else f"{waited}d ago")
+            st.caption(req.get('Reason') or "_No reason given_")
+            if req['Status'] == 'in_progress':
+                st.caption(":gray[Someone said they would sort this out and has not "
+                           "decided it yet.]")
 
     st.write("### Away dates")
     away = api_get(f"/away/users/{USER_ID}/away", quiet=True) or []
-    upcoming = [a for a in away if to_date(a['End_Date']) >= today]
+    # The API hands these back newest first, so the nearest period is at the end. Taking
+    # the first three off the raw list showed the three furthest out.
+    upcoming = sorted([a for a in away if to_date(a['End_Date']) >= today],
+                      key=lambda a: to_date(a['Start_Date']))
     if not upcoming:
         st.caption("None set. Marking dates keeps the rotation off your back.")
     for period in upcoming[:3]:
@@ -269,6 +333,22 @@ with side:
             f"- {to_date(period['Start_Date']).strftime('%b %d')} – "
             f"{to_date(period['End_Date']).strftime('%b %d')}"
         )
+
+    # An RA case is the sharpest thing there is about a resident's standing, and this
+    # page -- the one called My Standing -- did not read them at all. A resident could
+    # have an active intervention open against them and see nothing about it here.
+    st.write("### RA cases")
+    my_interventions = api_get("/intervention/interventions",
+                               params={"user_id": USER_ID}, quiet=True) or []
+    ongoing = [i for i in my_interventions if i['Status'] != 'closed']
+    if not ongoing:
+        st.caption("No open cases with your RA.")
+    for case in ongoing:
+        label, color = INTERVENTION_STATUS_BADGES.get(
+            case['Status'], (case['Status'].title(), 'gray'))
+        with st.container(border=True):
+            st.badge(label, color=color)
+            st.caption(case.get('Description') or "No description given.")
 
     if dorm_id is not None and room_number is not None:
         ra = (api_get(f"/room/dorms/{dorm_id}/rooms/{room_number}/ra",

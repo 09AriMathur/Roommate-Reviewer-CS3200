@@ -10,6 +10,13 @@ st.set_page_config(layout='wide')
 # Show appropriate sidebar links for the role of the currently logged in user
 SideBarLinks()
 
+# The sidebar only hides links; it does not stop another role from reaching
+# this URL. Without this, arriving without a session raised a KeyError on
+# first_name rather than saying the page was off limits.
+if st.session_state.get('role') != 'ra':
+    st.error('You do not have access to this page.')
+    st.stop()
+
 st.title('Performance Overview')
 st.write(f"### Hi, {st.session_state['first_name']}.")
 
@@ -41,17 +48,26 @@ def format_score(score):
     return f"{score:.0%}" if score is not None else "N/A"
 
 
-rooms = api_get("/room/rooms")
-ras = api_get("/ra/ras") or []
+RA_ID = st.session_state.get('user_id')
+
+# This page is an RA's own performance, so it asks about their own rooms. It used to
+# read all 68 rooms and every one of the 31 RAs' caseloads, so Carol's numbers were the
+# whole building's and moved when someone else's room did.
+building_wide = st.toggle(
+    "Show the whole building",
+    help="Off, these numbers are your rooms only.",
+)
+
+rooms = api_get("/room/rooms") if building_wide else api_get(f"/ra/ras/{RA_ID}/rooms")
 dorms = api_get("/dorm/dorms") or []
 dorm_names = {d["DormID"]: d["Dorm_Name"] for d in dorms}
 
 if rooms is not None:
-    # --- Interventions, gathered by looping over each RA since RA_Intervention
-    # is only exposed per-RA (no "all interventions" route exists) -------------
-    all_interventions = []
-    for ra in ras:
-        all_interventions += api_get(f"/ra/ras/{ra['RA_ID']}/interventions") or []
+    # One call rather than one per RA in the building.
+    all_interventions = api_get(
+        "/intervention/interventions"
+        + ("" if building_wide else f"?ra_id={RA_ID}")
+    ) or []
 
     total_interventions = len(all_interventions)
     completed_interventions = sum(1 for i in all_interventions if i["Status"] == "closed")
@@ -94,9 +110,12 @@ if rooms is not None:
     # --- Tasks & completion ------------------------------------------------------
     st.write('#### Tasks & Completion')
     col1, col2, col3 = st.columns(3)
-    col1.metric("Completed Tasks (All Rooms)", total_completed)
-    col2.metric("Missed Tasks (All Rooms)", total_missed)
-    col3.metric("Avg Completion Score (All Rooms)", format_score(avg_score_across_rooms))
+    # The label follows the toggle. It said "All Rooms" whatever was being counted,
+    # which was the only clue an RA had that these were not their own numbers.
+    scope = "Building" if building_wide else "Your Rooms"
+    col1.metric(f"Completed Tasks ({scope})", total_completed)
+    col2.metric(f"Missed Tasks ({scope})", total_missed)
+    col3.metric(f"Avg Completion Score ({scope})", format_score(avg_score_across_rooms))
 
     st.divider()
 

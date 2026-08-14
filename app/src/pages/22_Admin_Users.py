@@ -9,6 +9,13 @@ from modules.nav import SideBarLinks
 st.set_page_config(layout='wide')
 SideBarLinks()
 
+# The sidebar only hides links; it does not stop another role from reaching
+# this URL. Without this, arriving without a session raised a KeyError on
+# first_name rather than saying the page was off limits.
+if st.session_state.get('role') != 'admin':
+    st.error('You do not have access to this page.')
+    st.stop()
+
 API = "http://web-api:4000"
 
 st.title("User Accounts")
@@ -62,7 +69,14 @@ try:
     c2.metric("Tasks missed", detail.get("TasksMissed", 0))
     c3.metric("Room", f"{detail['Room_Number']}"
               if detail.get("Room_Number") is not None else "—")
-    c4.metric("RA ID", detail.get("RA") if detail.get("RA") is not None else "—")
+    # The RA's name, not their row id. Every other column on this page is something a
+    # person would say out loud, and the roster to resolve it is one call away.
+    ra_name = "—"
+    if detail.get("RA") is not None:
+        ra_detail = requests.get(f"{API}/ra/ras/{detail['RA']}").json()
+        if isinstance(ra_detail, dict) and ra_detail.get("First_Name"):
+            ra_name = f"{ra_detail['First_Name']} {ra_detail['Last_Name']}"
+    c4.metric("RA", ra_name)
     st.write(f"**Email:** {detail.get('Email', '—')}")
 
     # Roommates (same room)

@@ -60,12 +60,23 @@ CREATE TABLE Users (
 DROP TABLE IF EXISTS Requests;
 CREATE TABLE Requests (
     Request_ID   	INT AUTO_INCREMENT PRIMARY KEY,
+    -- 'in_progress' means a request somebody has picked up but not ruled on. Nothing in
+    -- the app writes it: filing makes a request 'open' and the two verdict buttons write
+    -- 'resolved' or 'rejected'. It is left in the type because a request queue is exactly
+    -- where that state belongs, but no row below is seeded into it -- a seeded
+    -- in_progress request rendered as a card offering a decision nobody could take.
     Status       	ENUM('open','in_progress','resolved','rejected') NOT NULL DEFAULT 'open',
     Reason       	TEXT,
     Request_Type 	VARCHAR(50) NOT NULL,
     Created_At   	DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     Proposed_Due_Date DATE,
     Task_ID      	INT,
+    -- A swap is a trade, so it names two chores: Task_ID is the one being given up and
+    -- Offered_Task_ID is the one wanted in return. It stays NULL on every other request
+    -- type, and on a swap where the requester is not asking for anything back. Before
+    -- this the second half lived only in the free-text reason, so accepting a swap could
+    -- not move it and a requester could not see what they were getting.
+    Offered_Task_ID INT,
     -- Who filed the request. Without this a request can only be traced to a person
     -- through Task_ID, which is NULL for expunction requests -- so those would be
     -- unattributable. Users is created above, so the FK can be declared inline.
@@ -80,6 +91,10 @@ CREATE TABLE Tasks (
     Task_Name  	VARCHAR(150) NOT NULL,
     Created_At 	DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     due_date   	DATE,
+    -- Same story as Requests.Status: a resident can only mark a chore done, and only an
+    -- RA upholding a report writes 'missed', so nothing ever sets 'in_progress'. It stays
+    -- in the type for the day a Start button exists, and no chore below is seeded into
+    -- it, because a state the app cannot leave is a state a resident cannot act on.
     status     	ENUM('todo','in_progress','done','missed') NOT NULL DEFAULT 'todo',
     Created_UserID INT NOT NULL,
     Assigned_UserID INT,
@@ -91,6 +106,8 @@ CREATE TABLE Tasks (
 
 ALTER TABLE Requests
     ADD FOREIGN KEY (Task_ID) REFERENCES Tasks(Task_ID)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+    ADD FOREIGN KEY (Offered_Task_ID) REFERENCES Tasks(Task_ID)
         ON DELETE SET NULL ON UPDATE CASCADE;
 
 DROP TABLE IF EXISTS RA_Intervention;
@@ -170,6 +187,23 @@ CREATE TABLE Rules (
 -- rows they summarise. Those are the same rules the API enforces on write, so
 -- every row below is one the running app would have accepted.
 --
+-- Stronger than that: every row is in a state the running app can actually reach.
+-- That rule is what the closing blocks of this file exist to hold, and it rules out
+-- a class of row that looked harmless and was not:
+--   * no chore sits at 'in_progress' and no request does either, because nothing in
+--     the app writes those -- a resident can only mark a chore done, and a request
+--     is only ever filed, approved or declined. Seeded into those states, a swap
+--     rendered as a card offering a decision that no button could take.
+--   * every missed chore has the report behind it that marked it, filed by a
+--     roommate and upheld by an RA, because that is the only path to 'missed'.
+--   * every settled request has had its effect applied -- the deadline moved, the
+--     chore changed hands, the mark lifted, the strike cleared -- so a page reading
+--     'resolved' and a page reading the chore chart agree about what happened.
+--   * every appeal names the thing it appeals: a dispute names the chore it says
+--     was marked unfairly, an expunction names the report it wants closed. An
+--     appeal that names nothing reaches an RA's queue as a decision they cannot
+--     carry out, so those were removed rather than left to be clicked.
+--
 -- The two resident personas are built as opposites, because they are the two accounts
 -- the app gets judged from:
 --   Users.UserID 43  Joshua Patel  12 done / 0 missed, no strikes, and the
@@ -178,7 +212,9 @@ CREATE TABLE Rules (
 --   Users.UserID 4   Frank Osei    0 done / 10 missed, 4 open strikes past a
 --                                  limit of 3, 5 live requests and 4 already refused,
 --                                  away for the week of every single miss
---   RAs.RA_ID 1      Carol Diaz    RA for Stetson East 101/103/108, Frank's open case
+--   RAs.RA_ID 1      Carol Diaz    RA for Stetson East 101/103/108 and Speare 406, so
+--                                  she is the RA on both resident personas: Frank's
+--                                  open case and the reports Joshua files
 --   System_Admin.AdminID 1  Sam Reynolds
 -- ===========================================================================
 
@@ -269,7 +305,7 @@ INSERT INTO Rooms (DormID, Room_Number, RA) VALUES
 (3, 208, 8),
 (3, 214, 8),
 (3, 304, 9),
-(3, 406, 9),
+(3, 406, 1),
 (4, 101, 10),
 (4, 117, 10),
 (4, 210, 10),
@@ -370,9 +406,9 @@ INSERT INTO Users (UserID, First_Name, Last_Name, Email, RA, DormID, Room_Number
 
 INSERT INTO Users (UserID, First_Name, Last_Name, Email, RA, DormID, Room_Number, TasksCompleted, TasksMissed) VALUES
 (41, 'Samara', 'Bailey', 'samara.bailey@northeastern.edu', 9, 3, 304, 1, 1),
-(42, 'Aubrey', 'Martin', 'aubrey.martin@northeastern.edu', 9, 3, 406, 3, 4),
-(43, 'Joshua', 'Patel', 'joshua.patel@northeastern.edu', 9, 3, 406, 12, 0),
-(44, 'Benjamin', 'Garcia', 'benjamin.garcia@northeastern.edu', 9, 3, 406, 3, 3),
+(42, 'Aubrey', 'Martin', 'aubrey.martin@northeastern.edu', 1, 3, 406, 3, 4),
+(43, 'Joshua', 'Patel', 'joshua.patel@northeastern.edu', 1, 3, 406, 12, 0),
+(44, 'Benjamin', 'Garcia', 'benjamin.garcia@northeastern.edu', 1, 3, 406, 3, 3),
 (45, 'Mia', 'Kowalski', 'mia.kowalski@northeastern.edu', 10, 4, 101, 1, 0),
 (46, 'Penelope', 'Edwards', 'penelope.edwards@northeastern.edu', 10, 4, 101, 2, 0),
 (47, 'Malik', 'Clark', 'malik.clark@northeastern.edu', 10, 4, 117, 1, 2),
@@ -505,7 +541,7 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 (14, 'Mop the kitchen floor', '2026-06-21 21:10:00', '2026-06-27', 'missed', 66, 65, NULL),
 (15, 'Disinfect doorknobs', '2026-06-21 20:10:00', '2026-06-25', 'missed', 70, 69, NULL),
 (16, 'Disinfect doorknobs', '2026-06-21 21:20:00', '2026-06-25', 'missed', 76, 76, NULL),
-(17, 'Wipe down bathroom mirror', '2026-06-21 20:30:00', '2026-06-27', 'in_progress', 82, 81, NULL),
+(17, 'Wipe down bathroom mirror', '2026-06-21 20:30:00', '2026-06-27', 'todo', 82, 81, NULL),
 (18, 'Restock paper towels', '2026-06-21 20:45:00', '2026-06-26', 'missed', 84, 83, NULL),
 (19, 'Wipe down bathroom mirror', '2026-06-21 17:10:00', '2026-06-27', 'done', 86, 86, NULL),
 (20, 'Wipe down kitchen counters', '2026-06-21 17:30:00', '2026-06-24', 'done', 95, 94, NULL),
@@ -532,7 +568,7 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 
 INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_UserID, Assigned_UserID, Request_ID) VALUES
 (41, 'Empty the dishwasher', '2026-06-28 19:10:00', '2026-06-29', 'done', 32, 32, NULL),
-(42, 'Wipe down bathroom mirror', '2026-06-28 19:15:00', '2026-07-04', 'in_progress', 34, 34, NULL),
+(42, 'Wipe down bathroom mirror', '2026-06-28 19:15:00', '2026-07-04', 'todo', 34, 34, NULL),
 (43, 'Scrub the shower', '2026-06-28 20:15:00', '2026-07-05', 'done', 39, 39, NULL),
 (44, 'Water the common room plants', '2026-06-28 21:45:00', '2026-06-29', 'done', 50, 50, NULL),
 (45, 'Sort recycling bins', '2026-06-28 21:30:00', '2026-07-01', 'done', 49, 49, NULL),
@@ -582,7 +618,7 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 (87, 'Take out compost', '2026-07-05 19:45:00', '2026-07-09', 'done', 53, 53, NULL),
 (88, 'Disinfect doorknobs', '2026-07-05 17:20:00', '2026-07-09', 'done', 54, 54, NULL),
 (89, 'Take out recycling', '2026-07-05 21:45:00', '2026-07-08', 'done', 56, 56, NULL),
-(90, 'Sweep the hallway', '2026-07-05 17:30:00', '2026-07-09', 'in_progress', 62, 62, NULL),
+(90, 'Sweep the hallway', '2026-07-05 17:30:00', '2026-07-09', 'todo', 62, 62, NULL),
 (91, 'Dust common areas', '2026-07-05 20:30:00', '2026-07-10', 'done', 64, 63, NULL),
 (92, 'Mop the kitchen floor', '2026-07-05 19:15:00', '2026-07-11', 'todo', 66, 65, NULL),
 (93, 'Disinfect doorknobs', '2026-07-05 19:15:00', '2026-07-09', 'done', 67, 67, NULL),
@@ -659,7 +695,7 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_UserID, Assigned_UserID, Request_ID) VALUES
 (161, 'Restock paper towels', '2026-07-12 18:10:00', '2026-07-17', 'done', 117, 117, NULL),
 (162, 'Take out recycling', '2026-07-12 20:45:00', '2026-07-15', 'missed', 127, 127, NULL),
-(163, 'Clean shared bathroom', '2026-07-12 20:30:00', '2026-07-19', 'in_progress', 134, 134, NULL),
+(163, 'Clean shared bathroom', '2026-07-12 20:30:00', '2026-07-19', 'todo', 134, 134, NULL),
 (164, 'Restock paper towels', '2026-07-12 21:30:00', '2026-07-17', 'missed', 134, 133, NULL),
 (165, 'Wipe down bathroom mirror', '2026-07-12 18:20:00', '2026-07-18', 'missed', 138, 139, NULL),
 (166, 'Sweep the hallway', '2026-07-12 17:00:00', '2026-07-16', 'missed', 141, 141, NULL),
@@ -727,7 +763,7 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 (226, 'Wipe down bathroom mirror', '2026-07-26 20:30:00', '2026-08-01', 'missed', 28, 28, NULL),
 (227, 'Clean the microwave', '2026-07-26 19:00:00', '2026-07-31', 'done', 31, 31, NULL),
 (228, 'Empty the dishwasher', '2026-07-26 18:30:00', '2026-07-27', 'missed', 32, 32, NULL),
-(229, 'Scrub the shower', '2026-07-26 19:15:00', '2026-08-02', 'in_progress', 39, 39, NULL),
+(229, 'Scrub the shower', '2026-07-26 19:15:00', '2026-08-02', 'todo', 39, 39, NULL),
 (230, 'Clean shared bathroom', '2026-07-26 18:00:00', '2026-08-02', 'done', 46, 46, NULL),
 (231, 'Water the common room plants', '2026-07-26 17:15:00', '2026-07-27', 'done', 48, 48, NULL),
 (232, 'Take out compost', '2026-07-26 17:45:00', '2026-07-30', 'done', 53, 53, NULL),
@@ -736,7 +772,7 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 (235, 'Dust common areas', '2026-07-26 19:15:00', '2026-07-31', 'todo', 64, 64, NULL),
 (236, 'Mop the kitchen floor', '2026-07-26 17:45:00', '2026-08-01', 'missed', 66, 66, NULL),
 (237, 'Scrub the shower', '2026-07-26 20:10:00', '2026-08-02', 'done', 72, 73, NULL),
-(238, 'Water the common room plants', '2026-07-26 21:20:00', '2026-07-27', 'in_progress', 72, 72, NULL),
+(238, 'Water the common room plants', '2026-07-26 21:20:00', '2026-07-27', 'todo', 72, 72, NULL),
 (239, 'Empty the dishwasher', '2026-07-26 21:00:00', '2026-07-27', 'done', 78, 80, NULL),
 (240, 'Wipe down bathroom mirror', '2026-07-26 17:20:00', '2026-08-01', 'done', 82, 82, NULL);
 
@@ -768,19 +804,19 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 (265, 'Restock paper towels', '2026-08-02 20:45:00', '2026-08-07', 'done', 22, 22, NULL),
 (266, 'Sort recycling bins', '2026-08-02 21:10:00', '2026-08-05', 'missed', 22, 23, NULL),
 (267, 'Clean the shared fridge', '2026-08-02 18:15:00', '2026-08-09', 'done', 24, 24, NULL),
-(268, 'Clean the shared fridge', '2026-08-02 21:15:00', '2026-08-09', 'in_progress', 28, 28, NULL),
+(268, 'Clean the shared fridge', '2026-08-02 21:15:00', '2026-08-09', 'todo', 28, 28, NULL),
 (269, 'Take out trash', '2026-08-02 19:20:00', '2026-08-04', 'done', 30, 29, NULL),
 (270, 'Dust common areas', '2026-08-02 20:10:00', '2026-08-07', 'missed', 31, 31, NULL),
 (271, 'Empty the dishwasher', '2026-08-02 21:10:00', '2026-08-03', 'todo', 31, 31, NULL),
 (272, 'Wipe down bathroom mirror', '2026-08-02 20:30:00', '2026-08-08', 'done', 34, 33, NULL),
 (273, 'Scrub the shower', '2026-08-02 18:10:00', '2026-08-09', 'missed', 39, 38, NULL),
-(274, 'Empty the dishwasher', '2026-08-02 21:30:00', '2026-08-03', 'in_progress', 40, 40, NULL),
+(274, 'Empty the dishwasher', '2026-08-02 21:30:00', '2026-08-03', 'todo', 40, 40, NULL),
 (275, 'Water the common room plants', '2026-08-02 19:00:00', '2026-08-03', 'missed', 48, 47, NULL),
 (276, 'Water the common room plants', '2026-08-02 20:20:00', '2026-08-03', 'done', 49, 49, NULL),
 (277, 'Disinfect doorknobs', '2026-08-02 18:15:00', '2026-08-06', 'done', 54, 54, NULL),
 (278, 'Take out recycling', '2026-08-02 19:00:00', '2026-08-05', 'done', 56, 56, NULL),
 (279, 'Restock paper towels', '2026-08-02 19:15:00', '2026-08-07', 'done', 58, 58, NULL),
-(280, 'Sweep the hallway', '2026-08-02 17:30:00', '2026-08-06', 'in_progress', 60, 60, NULL);
+(280, 'Sweep the hallway', '2026-08-02 17:30:00', '2026-08-06', 'todo', 60, 60, NULL);
 
 INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_UserID, Assigned_UserID, Request_ID) VALUES
 (281, 'Dust common areas', '2026-08-02 19:15:00', '2026-08-07', 'done', 64, 63, NULL),
@@ -789,7 +825,7 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 (284, 'Disinfect doorknobs', '2026-08-02 19:45:00', '2026-08-06', 'missed', 70, 69, NULL),
 (285, 'Scrub the shower', '2026-08-02 19:20:00', '2026-08-09', 'missed', 72, 72, NULL),
 (286, 'Water the common room plants', '2026-08-02 17:00:00', '2026-08-03', 'done', 72, 73, NULL),
-(287, 'Dust common areas', '2026-08-02 19:15:00', '2026-08-07', 'in_progress', 74, 74, NULL),
+(287, 'Dust common areas', '2026-08-02 19:15:00', '2026-08-07', 'todo', 74, 74, NULL),
 (288, 'Disinfect doorknobs', '2026-08-02 19:15:00', '2026-08-06', 'missed', 76, 76, NULL),
 (289, 'Empty the dishwasher', '2026-08-02 17:45:00', '2026-08-03', 'done', 78, 78, NULL),
 (290, 'Wipe down bathroom mirror', '2026-08-02 20:10:00', '2026-08-08', 'done', 82, 81, NULL),
@@ -800,7 +836,7 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 (295, 'Clean shared bathroom', '2026-08-02 19:00:00', '2026-08-09', 'done', 92, 92, NULL),
 (296, 'Wipe down kitchen counters', '2026-08-02 17:20:00', '2026-08-05', 'missed', 95, 94, NULL),
 (297, 'Wipe down bathroom mirror', '2026-08-02 19:20:00', '2026-08-08', 'done', 96, 96, NULL),
-(298, 'Scrub the shower', '2026-08-02 19:20:00', '2026-08-09', 'in_progress', 99, 99, NULL),
+(298, 'Scrub the shower', '2026-08-02 19:20:00', '2026-08-09', 'todo', 99, 99, NULL),
 (299, 'Mop the kitchen floor', '2026-08-02 18:15:00', '2026-08-08', 'done', 101, 101, NULL),
 (300, 'Water the common room plants', '2026-08-02 18:45:00', '2026-08-03', 'done', 103, 104, NULL),
 (301, 'Mop the kitchen floor', '2026-08-02 18:10:00', '2026-08-08', 'done', 110, 110, NULL),
@@ -832,13 +868,13 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 (325, 'Clean the shared fridge', '2026-08-09 21:00:00', '2026-08-16', 'todo', 25, 25, NULL),
 (326, 'Wipe down bathroom mirror', '2026-08-09 17:10:00', '2026-08-15', 'todo', 28, 28, NULL),
 (327, 'Dust common areas', '2026-08-09 21:15:00', '2026-08-14', 'done', 32, 32, NULL),
-(328, 'Clean the microwave', '2026-08-09 17:20:00', '2026-08-14', 'in_progress', 31, 31, NULL),
+(328, 'Clean the microwave', '2026-08-09 17:20:00', '2026-08-14', 'todo', 31, 31, NULL),
 (329, 'Empty the dishwasher', '2026-08-09 19:10:00', '2026-08-10', 'done', 32, 32, NULL),
 (330, 'Wipe down bathroom mirror', '2026-08-09 19:15:00', '2026-08-15', 'todo', 37, 37, NULL),
 (331, 'Scrub the shower', '2026-08-09 18:15:00', '2026-08-16', 'todo', 39, 39, NULL),
 (332, 'Empty the dishwasher', '2026-08-09 17:15:00', '2026-08-10', 'missed', 40, 41, NULL),
 (333, 'Vacuum the common room', '2026-08-09 19:20:00', '2026-08-16', 'done', 40, 40, NULL),
-(334, 'Clean shared bathroom', '2026-08-09 18:20:00', '2026-08-16', 'in_progress', 46, 46, NULL),
+(334, 'Clean shared bathroom', '2026-08-09 18:20:00', '2026-08-16', 'todo', 46, 46, NULL),
 (335, 'Water the common room plants', '2026-08-09 21:15:00', '2026-08-10', 'missed', 48, 48, NULL),
 (336, 'Sort recycling bins', '2026-08-09 18:00:00', '2026-08-12', 'done', 49, 49, NULL),
 (337, 'Take out compost', '2026-08-09 20:15:00', '2026-08-13', 'todo', 53, 52, NULL),
@@ -851,10 +887,10 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 (344, 'Sort recycling bins', '2026-08-09 21:15:00', '2026-08-12', 'todo', 72, 73, NULL),
 (345, 'Disinfect doorknobs', '2026-08-09 18:45:00', '2026-08-13', 'todo', 76, 77, NULL),
 (346, 'Wipe down bathroom mirror', '2026-08-09 20:30:00', '2026-08-15', 'todo', 82, 82, NULL),
-(347, 'Restock paper towels', '2026-08-09 17:30:00', '2026-08-14', 'in_progress', 84, 84, NULL),
-(348, 'Dust common areas', '2026-08-09 17:00:00', '2026-08-14', 'in_progress', 86, 86, NULL),
+(347, 'Restock paper towels', '2026-08-09 17:30:00', '2026-08-14', 'todo', 84, 84, NULL),
+(348, 'Dust common areas', '2026-08-09 17:00:00', '2026-08-14', 'todo', 86, 86, NULL),
 (349, 'Take out recycling', '2026-08-09 19:00:00', '2026-08-12', 'done', 86, 86, NULL),
-(350, 'Wipe down bathroom mirror', '2026-08-09 21:00:00', '2026-08-15', 'in_progress', 88, 88, NULL),
+(350, 'Wipe down bathroom mirror', '2026-08-09 21:00:00', '2026-08-15', 'todo', 88, 88, NULL),
 (351, 'Wipe down kitchen counters', '2026-08-09 18:30:00', '2026-08-12', 'missed', 95, 95, NULL),
 (352, 'Mop the kitchen floor', '2026-08-09 19:15:00', '2026-08-15', 'todo', 98, 98, NULL),
 (353, 'Take out recycling', '2026-08-09 21:45:00', '2026-08-12', 'missed', 96, 96, NULL),
@@ -863,7 +899,7 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 (356, 'Water the common room plants', '2026-08-09 20:00:00', '2026-08-10', 'missed', 103, 103, NULL),
 (357, 'Wipe down kitchen counters', '2026-08-09 21:00:00', '2026-08-12', 'missed', 107, 107, NULL),
 (358, 'Sweep the hallway', '2026-08-09 17:45:00', '2026-08-13', 'todo', 108, 109, NULL),
-(359, 'Mop the kitchen floor', '2026-08-09 18:15:00', '2026-08-15', 'in_progress', 111, 111, NULL),
+(359, 'Mop the kitchen floor', '2026-08-09 18:15:00', '2026-08-15', 'todo', 111, 111, NULL),
 (360, 'Sort recycling bins', '2026-08-09 21:00:00', '2026-08-12', 'missed', 120, 122, NULL);
 
 INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_UserID, Assigned_UserID, Request_ID) VALUES
@@ -873,76 +909,76 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 (364, 'Wipe down bathroom mirror', '2026-08-09 21:20:00', '2026-08-15', 'todo', 138, 139, NULL),
 (365, 'Sweep the hallway', '2026-08-09 17:00:00', '2026-08-13', 'todo', 141, 141, NULL),
 (366, 'Dust common areas', '2026-08-09 18:20:00', '2026-08-14', 'todo', 143, 143, NULL),
-(367, 'Wipe down bathroom mirror', '2026-08-09 21:15:00', '2026-08-15', 'in_progress', 146, 146, NULL),
+(367, 'Wipe down bathroom mirror', '2026-08-09 21:15:00', '2026-08-15', 'todo', 146, 146, NULL),
 (368, 'Vacuum the common room', '2026-08-09 17:15:00', '2026-08-16', 'todo', 145, 145, NULL),
 (369, 'Empty the dishwasher', '2026-08-09 19:10:00', '2026-08-10', 'done', 146, 146, NULL),
 (370, 'Clean the shared fridge', '2026-08-11 10:50:00', '2026-08-23', 'todo', 2, 1, NULL),
 (371, 'Restock paper towels', '2026-08-11 14:35:00', '2026-08-21', 'todo', 6, 6, NULL),
-(372, 'Empty the dishwasher', '2026-08-10 14:40:00', '2026-08-17', 'in_progress', 10, 9, NULL),
+(372, 'Empty the dishwasher', '2026-08-10 14:40:00', '2026-08-17', 'todo', 10, 9, NULL),
 (373, 'Empty the dishwasher', '2026-08-11 20:25:00', '2026-08-17', 'todo', 13, 13, NULL),
 (374, 'Restock paper towels', '2026-08-10 12:55:00', '2026-08-21', 'todo', 14, 14, NULL),
 (375, 'Water the common room plants', '2026-08-10 16:00:00', '2026-08-17', 'todo', 13, 13, NULL),
 (376, 'Scrub the shower', '2026-08-12 09:55:00', '2026-08-23', 'todo', 17, 17, NULL),
 (377, 'Water the common room plants', '2026-08-11 11:05:00', '2026-08-17', 'todo', 21, 20, NULL),
 (378, 'Clean the shared fridge', '2026-08-12 09:35:00', '2026-08-23', 'todo', 26, 26, NULL),
-(379, 'Take out trash', '2026-08-10 19:55:00', '2026-08-18', 'in_progress', 30, 29, NULL),
+(379, 'Take out trash', '2026-08-10 19:55:00', '2026-08-18', 'todo', 30, 29, NULL),
 (380, 'Dust common areas', '2026-08-12 19:50:00', '2026-08-21', 'todo', 31, 31, NULL),
-(381, 'Wipe down bathroom mirror', '2026-08-10 11:15:00', '2026-08-22', 'in_progress', 36, 36, NULL),
+(381, 'Wipe down bathroom mirror', '2026-08-10 11:15:00', '2026-08-22', 'todo', 36, 36, NULL),
 (382, 'Scrub the shower', '2026-08-13 13:35:00', '2026-08-23', 'todo', 39, 38, NULL),
-(383, 'Clean shared bathroom', '2026-08-12 09:25:00', '2026-08-23', 'in_progress', 45, 45, NULL),
+(383, 'Clean shared bathroom', '2026-08-12 09:25:00', '2026-08-23', 'todo', 45, 45, NULL),
 (384, 'Take out compost', '2026-08-13 14:20:00', '2026-08-20', 'todo', 53, 53, NULL),
 (385, 'Disinfect doorknobs', '2026-08-11 20:30:00', '2026-08-20', 'todo', 54, 54, NULL),
-(386, 'Restock paper towels', '2026-08-12 12:45:00', '2026-08-21', 'in_progress', 58, 58, NULL),
-(387, 'Sweep the hallway', '2026-08-12 12:00:00', '2026-08-20', 'in_progress', 62, 62, NULL),
+(386, 'Restock paper towels', '2026-08-12 12:45:00', '2026-08-21', 'todo', 58, 58, NULL),
+(387, 'Sweep the hallway', '2026-08-12 12:00:00', '2026-08-20', 'todo', 62, 62, NULL),
 (388, 'Disinfect doorknobs', '2026-08-11 13:25:00', '2026-08-20', 'todo', 67, 67, NULL),
-(389, 'Scrub the shower', '2026-08-12 14:05:00', '2026-08-23', 'in_progress', 72, 72, NULL),
+(389, 'Scrub the shower', '2026-08-12 14:05:00', '2026-08-23', 'todo', 72, 72, NULL),
 (390, 'Water the common room plants', '2026-08-12 19:05:00', '2026-08-17', 'todo', 72, 73, NULL),
 (391, 'Sort recycling bins', '2026-08-13 15:13:00', '2026-08-19', 'todo', 72, 72, NULL),
-(392, 'Empty the dishwasher', '2026-08-12 19:30:00', '2026-08-17', 'in_progress', 78, 80, NULL),
+(392, 'Empty the dishwasher', '2026-08-12 19:30:00', '2026-08-17', 'todo', 78, 80, NULL),
 (393, 'Take out trash', '2026-08-12 15:35:00', '2026-08-18', 'todo', 82, 82, NULL),
 (394, 'Take out recycling', '2026-08-13 09:55:00', '2026-08-19', 'todo', 85, 85, NULL),
 (395, 'Wipe down bathroom mirror', '2026-08-10 15:40:00', '2026-08-22', 'todo', 89, 89, NULL),
-(396, 'Clean shared bathroom', '2026-08-11 14:30:00', '2026-08-23', 'in_progress', 92, 92, NULL),
+(396, 'Clean shared bathroom', '2026-08-11 14:30:00', '2026-08-23', 'todo', 92, 92, NULL),
 (397, 'Take out recycling', '2026-08-12 10:20:00', '2026-08-19', 'todo', 97, 97, NULL),
 (398, 'Scrub the shower', '2026-08-12 10:40:00', '2026-08-23', 'todo', 99, 99, NULL),
-(399, 'Wipe down kitchen counters', '2026-08-10 20:05:00', '2026-08-19', 'in_progress', 106, 106, NULL),
+(399, 'Wipe down kitchen counters', '2026-08-10 20:05:00', '2026-08-19', 'todo', 106, 106, NULL),
 (400, 'Sweep the hallway', '2026-08-11 09:05:00', '2026-08-20', 'todo', 108, 108, NULL);
 
 INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_UserID, Assigned_UserID, Request_ID) VALUES
 (401, 'Sort recycling bins', '2026-08-11 18:50:00', '2026-08-19', 'todo', 111, 111, NULL),
 (402, 'Take out recycling', '2026-08-12 18:10:00', '2026-08-19', 'todo', 115, 115, NULL),
 (403, 'Disinfect doorknobs', '2026-08-10 13:30:00', '2026-08-20', 'todo', 118, 118, NULL),
-(404, 'Sort recycling bins', '2026-08-10 11:25:00', '2026-08-19', 'in_progress', 120, 120, NULL),
-(405, 'Clean the shared fridge', '2026-08-10 10:40:00', '2026-08-23', 'in_progress', 123, 123, NULL),
+(404, 'Sort recycling bins', '2026-08-10 11:25:00', '2026-08-19', 'todo', 120, 120, NULL),
+(405, 'Clean the shared fridge', '2026-08-10 10:40:00', '2026-08-23', 'todo', 123, 123, NULL),
 (406, 'Vacuum the common room', '2026-08-13 10:00:00', '2026-08-23', 'todo', 125, 125, NULL),
 (407, 'Take out recycling', '2026-08-10 18:25:00', '2026-08-19', 'todo', 127, 127, NULL),
 (408, 'Water the common room plants', '2026-08-13 12:19:00', '2026-08-17', 'todo', 132, 131, NULL),
-(409, 'Clean shared bathroom', '2026-08-11 09:10:00', '2026-08-23', 'in_progress', 132, 132, NULL),
+(409, 'Clean shared bathroom', '2026-08-11 09:10:00', '2026-08-23', 'todo', 132, 132, NULL),
 (410, 'Clean shared bathroom', '2026-08-12 20:05:00', '2026-08-23', 'todo', 134, 133, NULL),
-(411, 'Clean the shared fridge', '2026-08-11 11:05:00', '2026-08-23', 'in_progress', 136, 136, NULL),
+(411, 'Clean the shared fridge', '2026-08-11 11:05:00', '2026-08-23', 'todo', 136, 136, NULL),
 (412, 'Sweep the hallway', '2026-08-13 13:35:00', '2026-08-20', 'todo', 137, 137, NULL),
-(413, 'Wipe down bathroom mirror', '2026-08-13 13:41:00', '2026-08-22', 'in_progress', 138, 138, NULL),
-(414, 'Restock paper towels', '2026-08-11 19:05:00', '2026-08-21', 'in_progress', 144, 144, NULL),
+(413, 'Wipe down bathroom mirror', '2026-08-13 13:41:00', '2026-08-22', 'todo', 138, 138, NULL),
+(414, 'Restock paper towels', '2026-08-11 19:05:00', '2026-08-21', 'todo', 144, 144, NULL),
 (415, 'Disinfect doorknobs', '2026-08-11 20:35:00', '2026-08-20', 'todo', 144, 144, NULL),
 (416, 'Wipe down bathroom mirror', '2026-08-13 10:54:00', '2026-08-22', 'todo', 145, 145, NULL),
-(417, 'Vacuum the common room', '2026-08-11 14:50:00', '2026-08-23', 'in_progress', 146, 146, NULL),
+(417, 'Vacuum the common room', '2026-08-11 14:50:00', '2026-08-23', 'todo', 146, 146, NULL),
 (418, 'Empty the dishwasher', '2026-08-10 18:40:00', '2026-08-17', 'todo', 145, 145, NULL),
-(419, 'Take out trash', '2026-08-13 14:24:00', '2026-08-25', 'in_progress', 12, 12, NULL),
+(419, 'Take out trash', '2026-08-13 14:24:00', '2026-08-25', 'todo', 12, 12, NULL),
 (420, 'Sort recycling bins', '2026-08-13 10:44:00', '2026-08-26', 'todo', 22, 22, NULL),
 (421, 'Take out trash', '2026-08-10 10:10:00', '2026-08-25', 'todo', 30, 30, NULL),
 (422, 'Empty the dishwasher', '2026-08-10 16:50:00', '2026-08-24', 'todo', 32, 32, NULL),
-(423, 'Empty the dishwasher', '2026-08-11 16:40:00', '2026-08-24', 'in_progress', 40, 41, NULL),
+(423, 'Empty the dishwasher', '2026-08-11 16:40:00', '2026-08-24', 'todo', 40, 41, NULL),
 (424, 'Water the common room plants', '2026-08-12 12:40:00', '2026-08-24', 'todo', 48, 48, NULL),
 (425, 'Water the common room plants', '2026-08-13 09:10:00', '2026-08-24', 'todo', 50, 50, NULL),
 (426, 'Sort recycling bins', '2026-08-10 09:00:00', '2026-08-26', 'todo', 49, 49, NULL),
-(427, 'Water the common room plants', '2026-08-10 18:15:00', '2026-08-24', 'in_progress', 72, 72, NULL),
-(428, 'Take out trash', '2026-08-11 11:45:00', '2026-08-25', 'in_progress', 82, 81, NULL),
-(429, 'Wipe down kitchen counters', '2026-08-11 10:00:00', '2026-08-26', 'in_progress', 95, 95, NULL),
+(427, 'Water the common room plants', '2026-08-10 18:15:00', '2026-08-24', 'todo', 72, 72, NULL),
+(428, 'Take out trash', '2026-08-11 11:45:00', '2026-08-25', 'todo', 82, 81, NULL),
+(429, 'Wipe down kitchen counters', '2026-08-11 10:00:00', '2026-08-26', 'todo', 95, 95, NULL),
 (430, 'Take out recycling', '2026-08-11 15:45:00', '2026-08-26', 'todo', 98, 98, NULL),
 (431, 'Wipe down kitchen counters', '2026-08-11 13:15:00', '2026-08-26', 'todo', 107, 107, NULL),
 (432, 'Sort recycling bins', '2026-08-11 12:35:00', '2026-08-26', 'todo', 110, 110, NULL),
-(433, 'Take out recycling', '2026-08-12 19:00:00', '2026-08-26', 'in_progress', 114, 112, NULL),
-(434, 'Take out recycling', '2026-08-13 09:29:00', '2026-08-26', 'in_progress', 127, 127, NULL),
+(433, 'Take out recycling', '2026-08-12 19:00:00', '2026-08-26', 'todo', 114, 112, NULL),
+(434, 'Take out recycling', '2026-08-13 09:29:00', '2026-08-26', 'todo', 127, 127, NULL),
 (435, 'Take out trash', '2026-08-13 13:40:00', '2026-08-25', 'todo', 136, 136, NULL),
 (436, 'Take out trash', '2026-06-17 19:05:00', '2026-06-23', 'missed', 3, 4, NULL),
 (437, 'Water the common room plants', '2026-06-19 18:20:00', '2026-06-25', 'done', 3, 5, NULL),
@@ -971,7 +1007,7 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 (458, 'Vacuum the common room', '2026-08-04 08:25:00', '2026-08-09', 'missed', 3, 4, NULL),
 (459, 'Disinfect doorknobs', '2026-08-03 12:40:00', '2026-08-09', 'done', 3, 3, NULL),
 (460, 'Wipe down bathroom mirror', '2026-08-09 11:25:00', '2026-08-16', 'todo', 3, 3, NULL),
-(461, 'Take out recycling', '2026-08-12 10:55:00', '2026-08-18', 'in_progress', 4, 4, NULL),
+(461, 'Take out recycling', '2026-08-12 10:55:00', '2026-08-18', 'todo', 4, 4, NULL),
 (462, 'Take out compost', '2026-08-13 13:54:00', '2026-08-19', 'todo', 3, 5, NULL),
 (463, 'Mop the kitchen floor', '2026-08-13 10:35:00', '2026-08-20', 'todo', 3, 3, NULL),
 (464, 'Clean shared bathroom', '2026-08-13 11:32:00', '2026-08-23', 'todo', 3, 4, NULL),
@@ -1003,9 +1039,9 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 (488, 'Clean the shared fridge', '2026-07-31 18:15:00', '2026-08-04', 'missed', 43, 44, NULL),
 (489, 'Mop the kitchen floor', '2026-07-31 15:30:00', '2026-08-07', 'missed', 43, 42, NULL),
 (490, 'Scrub the shower', '2026-08-02 09:50:00', '2026-08-09', 'done', 43, 43, NULL),
-(491, 'Empty the dishwasher', '2026-08-03 17:45:00', '2026-08-10', 'in_progress', 43, 44, NULL),
+(491, 'Empty the dishwasher', '2026-08-03 17:45:00', '2026-08-10', 'todo', 43, 44, NULL),
 (492, 'Dust common areas', '2026-08-04 08:05:00', '2026-08-11', 'todo', 43, 42, NULL),
-(493, 'Take out compost', '2026-08-11 11:40:00', '2026-08-16', 'in_progress', 43, 43, NULL),
+(493, 'Take out compost', '2026-08-11 11:40:00', '2026-08-16', 'todo', 43, 43, NULL),
 (494, 'Clean the microwave', '2026-08-13 15:03:00', '2026-08-20', 'todo', 43, 43, NULL),
 (495, 'Sort recycling bins', '2026-08-13 11:32:00', '2026-08-21', 'todo', 43, 42, NULL),
 (496, 'Vacuum the common room', '2026-08-13 13:43:00', '2026-08-22', 'todo', 43, 44, NULL),
@@ -1016,7 +1052,7 @@ INSERT INTO Tasks (Task_ID, Task_Name, Created_At, due_date, status, Created_Use
 -- to a person only through Requested_By_UserID. Anything still open and asking
 -- about a chore points at a chore its requester has in play, because asking for
 -- more time on something already finished is not a request the app will take.
--- The maintenance / room_change / chore_swap rows at the end are from the start of
+-- The maintenance / room_change rows at the end are from the start of
 -- the term, before chores moved into the app: the pages still render that
 -- vocabulary, nothing files it any more.
 INSERT INTO Requests (Request_ID, Status, Reason, Request_Type, Created_At, Proposed_Due_Date, Task_ID, Requested_By_UserID) VALUES
@@ -1024,7 +1060,7 @@ INSERT INTO Requests (Request_ID, Status, Reason, Request_Type, Created_At, Prop
 (2, 'open', 'Offering the bathroom to whoever wants it; I can take something in September.', 'swap', '2026-08-12 10:00:00', NULL, 464, 4),
 (3, 'open', 'Disputing the counters report -- I was away 1-5 August, dates are on my profile.', 'dispute', '2026-08-12 19:40:00', NULL, NULL, 4),
 (4, 'open', 'Asking for the 7 July trash strike to be voided; I was away that whole week.', 'expunction', '2026-08-13 10:30:00', NULL, NULL, 4),
-(5, 'in_progress', 'Away again from the 24th -- can the trash move to the week after?', 'extension', '2026-08-13 11:20:00', '2026-09-01', 465, 4),
+(5, 'open', 'Away again from the 24th -- can the trash move to the week after?', 'extension', '2026-08-13 11:20:00', '2026-09-01', 465, 4),
 (6, 'rejected', 'Asked for two more days on the trash; roommates voted it down.', 'extension', '2026-07-05 22:25:00', '2026-07-09', 443, 4),
 (7, 'rejected', 'Offered to trade the microwave for something later; nobody took it.', 'swap', '2026-07-19 13:40:00', NULL, 449, 4),
 (8, 'rejected', 'Said the counters were not mine that week; the room disagreed.', 'dispute', '2026-07-06 09:40:00', NULL, NULL, 4),
@@ -1032,23 +1068,23 @@ INSERT INTO Requests (Request_ID, Status, Reason, Request_Type, Created_At, Prop
 (10, 'open', 'Away for my sister''s graduation on the 20th -- can anyone take the mopping?', 'swap', '2026-08-10 19:25:00', NULL, 463, 3),
 (11, 'resolved', 'Home for my grandfather''s funeral that week; roommates moved the date and I did it on the 30th.', 'extension', '2026-07-22 10:10:00', '2026-07-30', 484, 43),
 (12, 'open', 'Away for a wedding on the 23rd -- happy to take whatever is next in exchange.', 'swap', '2026-08-12 15:20:00', NULL, 497, 43),
-(13, 'in_progress', 'Offering to take the compost early so it is not sitting over the weekend.', 'swap', '2026-08-11 10:55:00', NULL, 493, 43),
+(13, 'open', 'Offering to take the compost early so it is not sitting over the weekend.', 'swap', '2026-08-11 10:55:00', NULL, 493, 43),
 (14, 'rejected', 'Offered to cover the fridge for whoever had it; they wanted to keep the rotation.', 'swap', '2026-07-20 21:30:00', NULL, 480, 43),
-(15, 'in_progress', 'Midterm week -- asking for the weekend instead.', 'extension', '2026-08-08 21:25:00', '2026-08-30', 495, 42),
+(15, 'open', 'Midterm week -- asking for the weekend instead.', 'extension', '2026-08-08 21:25:00', '2026-08-30', 495, 42),
 (16, 'resolved', 'Marked missed but I finished it the night before the deadline.', 'dispute', '2026-07-11 22:35:00', NULL, NULL, 77),
 (17, 'open', 'Trading trash duty for the kitchen counters, if anyone is up for it.', 'swap', '2026-07-20 22:25:00', NULL, 201, 110),
 (18, 'rejected', 'The report is about the wrong chore, that one was not mine.', 'dispute', '2026-08-12 18:55:00', NULL, NULL, 24),
-(19, 'in_progress', 'Asking for the June strike to be cleared -- nothing missed since.', 'expunction', '2026-08-03 14:05:00', NULL, NULL, 10),
+(19, 'open', 'Asking for the June strike to be cleared -- nothing missed since.', 'expunction', '2026-08-03 14:05:00', NULL, NULL, 10),
 (20, 'resolved', 'Requesting an old strike be voided given a clean record since then.', 'expunction', '2026-08-09 17:30:00', NULL, NULL, 143),
 (21, 'open', 'Lab report due the same night; can I have two extra days?', 'extension', '2026-08-08 12:35:00', '2026-08-22', 462, 5),
 (22, 'rejected', 'Happy to take the bathroom next week if someone takes recycling now.', 'swap', '2026-07-07 18:00:00', NULL, 105, 98),
 (23, 'rejected', 'Offering to trade this week''s chore for a later one.', 'swap', '2026-07-03 11:05:00', NULL, 70, 8),
-(24, 'in_progress', 'I am away on the due date -- will swap for whatever is next.', 'swap', '2026-07-01 15:20:00', NULL, 42, 34),
+(24, 'open', 'I am away on the due date -- will swap for whatever is next.', 'swap', '2026-07-01 15:20:00', NULL, 42, 34),
 (25, 'open', 'Photo is in the group chat with a timestamp before the due date.', 'dispute', '2026-06-28 11:10:00', NULL, NULL, 121),
 (26, 'resolved', 'This was done on time; my roommate saw me do it.', 'dispute', '2026-08-13 12:55:00', NULL, NULL, 40),
 (27, 'rejected', 'Happy to take the bathroom next week if someone takes recycling now.', 'swap', '2026-08-07 09:45:00', NULL, 332, 41),
 (28, 'open', 'Ten weeks on time since that one; asking for it to come off.', 'expunction', '2026-06-29 12:45:00', NULL, NULL, 42),
-(29, 'in_progress', 'Trading trash duty for the kitchen counters, if anyone is up for it.', 'swap', '2026-08-09 20:20:00', NULL, 325, 25),
+(29, 'open', 'Trading trash duty for the kitchen counters, if anyone is up for it.', 'swap', '2026-08-09 20:20:00', NULL, 325, 25),
 (30, 'resolved', 'Trading trash duty for the kitchen counters, if anyone is up for it.', 'swap', '2026-07-24 19:55:00', NULL, 231, 48),
 (31, 'open', 'Co-op interview out of state, back Thursday.', 'extension', '2026-08-13 13:02:00', '2026-08-21', 375, 13),
 (32, 'rejected', 'This was done on time; my roommate saw me do it.', 'dispute', '2026-07-16 12:35:00', NULL, NULL, 94),
@@ -1056,20 +1092,20 @@ INSERT INTO Requests (Request_ID, Status, Reason, Request_Type, Created_At, Prop
 (34, 'open', 'Midterm week -- asking for the weekend instead.', 'extension', '2026-07-22 22:05:00', '2026-07-30', 201, 110),
 (35, 'rejected', 'Flight home got moved up, I will do it the day I land.', 'extension', '2026-07-07 22:30:00', '2026-07-16', 105, 98),
 (36, 'open', 'Ten weeks on time since that one; asking for it to come off.', 'expunction', '2026-07-19 22:15:00', NULL, NULL, 75),
-(37, 'in_progress', 'Happy to take the bathroom next week if someone takes recycling now.', 'swap', '2026-08-13 11:25:00', NULL, 394, 85),
+(37, 'open', 'Happy to take the bathroom next week if someone takes recycling now.', 'swap', '2026-08-13 11:25:00', NULL, 394, 85),
 (38, 'open', 'Photo is in the group chat with a timestamp before the due date.', 'dispute', '2026-07-26 19:10:00', NULL, NULL, 67),
 (39, 'resolved', 'Requesting an old strike be voided given a clean record since then.', 'expunction', '2026-08-11 15:15:00', NULL, NULL, 22),
 (40, 'open', 'Would rather do the vacuuming; offering mine in exchange.', 'swap', '2026-08-06 13:55:00', NULL, 491, 44);
 
 INSERT INTO Requests (Request_ID, Status, Reason, Request_Type, Created_At, Proposed_Due_Date, Task_ID, Requested_By_UserID) VALUES
-(41, 'in_progress', 'Co-op interview out of state, back Thursday.', 'extension', '2026-08-13 13:10:00', '2026-08-18', 330, 37),
+(41, 'open', 'Co-op interview out of state, back Thursday.', 'extension', '2026-08-13 13:10:00', '2026-08-18', 330, 37),
 (42, 'rejected', 'Photo is in the group chat with a timestamp before the due date.', 'dispute', '2026-07-26 14:05:00', NULL, NULL, 12),
 (43, 'rejected', 'Trading trash duty for the kitchen counters, if anyone is up for it.', 'swap', '2026-07-04 22:15:00', NULL, 70, 8),
 (44, 'open', 'Photo is in the group chat with a timestamp before the due date.', 'dispute', '2026-08-13 09:15:00', NULL, NULL, 133),
 (45, 'open', 'I was away that week -- away dates are on my profile.', 'dispute', '2026-07-28 18:45:00', NULL, NULL, 72),
 (46, 'rejected', 'I was away that week -- away dates are on my profile.', 'dispute', '2026-07-28 13:30:00', NULL, NULL, 38),
 (47, 'resolved', 'Work shift ran long three nights this week.', 'extension', '2026-07-01 09:15:00', '2026-07-06', 42, 34),
-(48, 'in_progress', 'I was away that week -- away dates are on my profile.', 'dispute', '2026-08-13 08:33:00', NULL, NULL, 107),
+(48, 'open', 'I was away that week -- away dates are on my profile.', 'dispute', '2026-08-13 08:33:00', NULL, NULL, 107),
 (49, 'resolved', 'The report is about the wrong chore, that one was not mine.', 'dispute', '2026-08-10 18:40:00', NULL, NULL, 31),
 (50, 'rejected', 'This was done on time; my roommate saw me do it.', 'dispute', '2026-07-23 18:50:00', NULL, NULL, 72),
 (51, 'open', 'Photo is in the group chat with a timestamp before the due date.', 'dispute', '2026-08-13 10:10:00', NULL, NULL, 32),
@@ -1087,14 +1123,14 @@ INSERT INTO Requests (Request_ID, Status, Reason, Request_Type, Created_At, Prop
 (63, 'open', 'Work shift ran long three nights this week.', 'extension', '2026-08-13 08:48:00', '2026-08-28', 410, 133),
 (64, 'rejected', 'Asking for the June strike to be cleared -- nothing missed since.', 'expunction', '2026-08-11 10:15:00', NULL, NULL, 9),
 (65, 'rejected', 'This was done on time; my roommate saw me do it.', 'dispute', '2026-08-13 15:17:00', NULL, NULL, 87),
-(66, 'in_progress', 'I was away that week -- away dates are on my profile.', 'dispute', '2026-07-30 17:45:00', NULL, NULL, 76),
+(66, 'open', 'I was away that week -- away dates are on my profile.', 'dispute', '2026-07-30 17:45:00', NULL, NULL, 76),
 (67, 'open', 'The report is about the wrong chore, that one was not mine.', 'dispute', '2026-08-13 12:06:00', NULL, NULL, 127),
 (68, 'open', 'Photo is in the group chat with a timestamp before the due date.', 'dispute', '2026-08-02 22:05:00', NULL, NULL, 97),
 (69, 'open', 'Lab report due the same night; can I have two extra days?', 'extension', '2026-08-09 17:30:00', '2026-08-21', 337, 52),
 (70, 'open', 'Happy to take the bathroom next week if someone takes recycling now.', 'swap', '2026-08-11 17:10:00', NULL, 380, 31),
 (71, 'resolved', 'Midterm week -- asking for the weekend instead.', 'extension', '2026-07-18 21:20:00', '2026-07-24', 153, 93),
 (72, 'resolved', 'Midterm week -- asking for the weekend instead.', 'extension', '2026-08-02 17:35:00', '2026-08-13', 312, 140),
-(73, 'in_progress', 'Offering to trade this week''s chore for a later one.', 'swap', '2026-08-13 14:42:00', NULL, 398, 99),
+(73, 'open', 'Offering to trade this week''s chore for a later one.', 'swap', '2026-08-13 14:42:00', NULL, 398, 99),
 (74, 'rejected', 'Work shift ran long three nights this week.', 'extension', '2026-07-20 08:05:00', '2026-07-25', 196, 96),
 (75, 'open', 'The chore was reassigned mid-week and I still got the strike.', 'expunction', '2026-08-13 14:15:00', NULL, NULL, 22),
 (76, 'open', 'Happy to take the bathroom next week if someone takes recycling now.', 'swap', '2026-08-11 17:45:00', NULL, 374, 14),
@@ -1104,14 +1140,14 @@ INSERT INTO Requests (Request_ID, Status, Reason, Request_Type, Created_At, Prop
 (80, 'open', 'Work shift ran long three nights this week.', 'extension', '2026-08-09 16:45:00', '2026-08-30', 371, 6);
 
 INSERT INTO Requests (Request_ID, Status, Reason, Request_Type, Created_At, Proposed_Due_Date, Task_ID, Requested_By_UserID) VALUES
-(81, 'in_progress', 'I was away that week -- away dates are on my profile.', 'dispute', '2026-07-20 22:05:00', NULL, NULL, 141),
+(81, 'open', 'I was away that week -- away dates are on my profile.', 'dispute', '2026-07-20 22:05:00', NULL, NULL, 141),
 (82, 'resolved', 'Family visiting from out of town until Sunday.', 'extension', '2026-07-01 18:50:00', '2026-07-07', 40, 32),
 (83, 'resolved', 'Happy to take the bathroom next week if someone takes recycling now.', 'swap', '2026-07-21 20:30:00', NULL, 205, 127),
 (84, 'resolved', 'Marked missed but I finished it the night before the deadline.', 'dispute', '2026-07-29 11:45:00', NULL, NULL, 52),
 (85, 'resolved', 'Midterm week -- asking for the weekend instead.', 'extension', '2026-08-13 14:31:00', '2026-08-25', 395, 89),
 (86, 'resolved', 'Would rather do the vacuuming; offering mine in exchange.', 'swap', '2026-08-05 19:45:00', NULL, 279, 58),
-(87, 'in_progress', 'Down with a fever, roommates said they would cover the kitchen.', 'extension', '2026-08-11 08:55:00', '2026-08-27', 414, 144),
-(88, 'in_progress', 'Co-op interview out of state, back Thursday.', 'extension', '2026-08-13 15:05:00', '2026-08-29', 380, 31),
+(87, 'open', 'Down with a fever, roommates said they would cover the kitchen.', 'extension', '2026-08-11 08:55:00', '2026-08-27', 414, 144),
+(88, 'open', 'Co-op interview out of state, back Thursday.', 'extension', '2026-08-13 15:05:00', '2026-08-29', 380, 31),
 (89, 'rejected', 'Midterm week -- asking for the weekend instead.', 'extension', '2026-08-03 21:15:00', '2026-08-08', 283, 67),
 (90, 'open', 'Asking for the June strike to be cleared -- nothing missed since.', 'expunction', '2026-08-10 11:00:00', NULL, NULL, 143),
 (91, 'open', 'Midterm week -- asking for the weekend instead.', 'extension', '2026-08-12 18:30:00', '2026-09-04', 429, 95),
@@ -1125,12 +1161,12 @@ INSERT INTO Requests (Request_ID, Status, Reason, Request_Type, Created_At, Prop
 (99, 'rejected', 'Requesting an old strike be voided given a clean record since then.', 'expunction', '2026-08-04 09:05:00', NULL, NULL, 126),
 (100, 'resolved', 'Marked missed but I finished it the night before the deadline.', 'dispute', '2026-07-18 22:50:00', NULL, NULL, 80),
 (101, 'open', 'This was done on time; my roommate saw me do it.', 'dispute', '2026-07-17 13:15:00', NULL, NULL, 60),
-(102, 'in_progress', 'The report is about the wrong chore, that one was not mine.', 'dispute', '2026-07-14 22:10:00', NULL, NULL, 56),
+(102, 'open', 'The report is about the wrong chore, that one was not mine.', 'dispute', '2026-07-14 22:10:00', NULL, NULL, 56),
 (103, 'open', 'The chore was reassigned mid-week and I still got the strike.', 'expunction', '2026-07-28 21:05:00', NULL, NULL, 54),
-(104, 'in_progress', 'Asking for the June strike to be cleared -- nothing missed since.', 'expunction', '2026-07-13 22:30:00', NULL, NULL, 8),
+(104, 'open', 'Asking for the June strike to be cleared -- nothing missed since.', 'expunction', '2026-07-13 22:30:00', NULL, NULL, 8),
 (105, 'resolved', 'Work shift ran long three nights this week.', 'extension', '2026-07-17 16:30:00', '2026-07-20', 135, 37),
 (106, 'open', 'Family visiting from out of town until Sunday.', 'extension', '2026-07-18 19:00:00', '2026-07-28', 163, 134),
-(107, 'in_progress', 'Offering to trade this week''s chore for a later one.', 'swap', '2026-08-12 20:25:00', NULL, 496, 44),
+(107, 'open', 'Offering to trade this week''s chore for a later one.', 'swap', '2026-08-12 20:25:00', NULL, 496, 44),
 (108, 'resolved', 'Trading trash duty for the kitchen counters, if anyone is up for it.', 'swap', '2026-06-28 13:50:00', NULL, 41, 32),
 (109, 'resolved', 'The chore was reassigned mid-week and I still got the strike.', 'expunction', '2026-08-01 11:55:00', NULL, NULL, 48),
 (110, 'resolved', 'Photo is in the group chat with a timestamp before the due date.', 'dispute', '2026-07-19 10:15:00', NULL, NULL, 139),
@@ -1142,23 +1178,32 @@ INSERT INTO Requests (Request_ID, Status, Reason, Request_Type, Created_At, Prop
 (116, 'rejected', 'Would rather do the vacuuming; offering mine in exchange.', 'swap', '2026-08-04 19:15:00', NULL, 301, 110),
 (117, 'rejected', 'I am away on the due date -- will swap for whatever is next.', 'swap', '2026-07-21 22:25:00', NULL, 195, 97),
 (118, 'rejected', 'Offering to trade this week''s chore for a later one.', 'swap', '2026-08-02 10:00:00', NULL, 291, 82),
-(119, 'in_progress', 'Happy to take the bathroom next week if someone takes recycling now.', 'swap', '2026-08-13 10:42:00', NULL, 367, 146),
+(119, 'open', 'Happy to take the bathroom next week if someone takes recycling now.', 'swap', '2026-08-13 10:42:00', NULL, 367, 146),
 (120, 'resolved', 'Bathroom sink has been draining slowly since move-in.', 'maintenance', '2026-06-26 09:55:00', '2026-07-15', NULL, 17);
 
 INSERT INTO Requests (Request_ID, Status, Reason, Request_Type, Created_At, Proposed_Due_Date, Task_ID, Requested_By_UserID) VALUES
 (121, 'resolved', 'Hallway lightbulb outside the room is burned out.', 'maintenance', '2026-06-22 13:45:00', '2026-07-11', NULL, 145),
-(122, 'in_progress', 'Window latch is broken and will not lock.', 'maintenance', '2026-06-23 19:40:00', '2026-07-06', NULL, 6),
+(122, 'resolved', 'Window latch is broken and will not lock.', 'maintenance', '2026-06-23 19:40:00', '2026-07-06', NULL, 6),
 (123, 'resolved', 'Radiator bangs every night around 2am.', 'maintenance', '2026-06-28 15:35:00', '2026-07-13', NULL, 134),
 (124, 'resolved', 'Smoke detector keeps chirping, battery may be dead.', 'maintenance', '2026-06-26 16:45:00', '2026-07-10', NULL, 13),
 (125, 'rejected', 'Overhead light in the common room keeps flickering.', 'maintenance', '2026-06-26 19:20:00', '2026-07-17', NULL, 107),
 (126, 'resolved', 'Shower drain is backing up.', 'maintenance', '2026-06-22 10:10:00', '2026-07-05', NULL, 65),
-(127, 'in_progress', 'Mini-fridge is not staying cold.', 'maintenance', '2026-06-26 13:35:00', '2026-07-13', NULL, 139),
+(127, 'resolved', 'Mini-fridge is not staying cold.', 'maintenance', '2026-06-26 13:35:00', '2026-07-13', NULL, 139),
 (128, 'rejected', 'Requesting reassignment closer to campus for an early co-op.', 'room_change', '2026-06-28 19:30:00', '2026-07-19', NULL, 23),
 (129, 'resolved', 'Roommate conflict; asking to be moved.', 'room_change', '2026-06-23 13:15:00', '2026-07-01', NULL, 5),
 (130, 'rejected', 'Asked to be reassigned to a single room.', 'room_change', '2026-06-23 12:55:00', '2026-07-01', NULL, 130),
-(131, 'resolved', 'Away for a family event, need someone to cover my chore.', 'chore_swap', '2026-06-22 16:30:00', NULL, 289, 78),
-(132, 'rejected', 'Willing to trade chores with a roommate this cycle.', 'chore_swap', '2026-06-26 13:00:00', NULL, 5, 22),
-(133, 'resolved', 'Covering a shift, looking for a swap.', 'chore_swap', '2026-06-27 17:35:00', NULL, NULL, 34);
+(131, 'resolved', 'Away for a family event, need someone to cover my chore.', 'swap', '2026-06-22 16:30:00', NULL, 289, 78),
+(132, 'rejected', 'Willing to trade chores with a roommate this cycle.', 'swap', '2026-06-26 13:00:00', NULL, 5, 22),
+(133, 'resolved', 'Covering a shift, looking for a swap.', 'swap', '2026-06-27 17:35:00', NULL, NULL, 34);
+
+-- The swaps that name both sides of the trade. Backfilled here rather than inline
+-- because Offered_Task_ID points at Tasks, which is populated after this table. A swap
+-- with Offered_Task_ID NULL is still valid -- it means "someone take this", with nothing
+-- asked in return.
+UPDATE Requests SET Offered_Task_ID = 494 WHERE Request_ID = 98;   -- Aubrey wants Joshua's microwave
+UPDATE Requests SET Offered_Task_ID = 492 WHERE Request_ID = 12;   -- Joshua wants Aubrey's dusting
+UPDATE Requests SET Offered_Task_ID = 495 WHERE Request_ID = 40;   -- Benjamin wants Aubrey's recycling
+UPDATE Requests SET Offered_Task_ID = 460 WHERE Request_ID = 2;    -- Frank wants Erin's mirror
 
 -- A resolved extension is a deadline that actually moved, so the chore carries the
 -- request that moved it.
@@ -1182,11 +1227,11 @@ INSERT INTO RA_Intervention (RequestID, Description, Status, UserID, RA) VALUES
 (2, 'Escalated after the fourth strike -- reviewing whether he stays in a shared room.', 'pending', 4, 1),
 (3, 'First conversation in July about the trash rotation. No change followed.', 'closed', 4, 1),
 (4, 'Sat down with 103 to rewrite the chart after two roommates filed on the same person.', 'active', 3, 1),
-(5, 'Checked in with the room lead; the rotation is running itself, no action needed.', 'closed', 43, 9),
-(6, 'Discussed what happens if the strike count reaches three.', 'active', 42, 9),
+(5, 'Checked in with the room lead; the rotation is running itself, no action needed.', 'closed', 43, 1),
+(6, 'Discussed what happens if the strike count reaches three.', 'active', 42, 1),
 (7, 'Closed out an old report after the chore was finally done.', 'closed', 133, 28),
 (8, 'Followed up after a roommate filed back-to-back reports.', 'closed', 69, 14),
-(9, 'Sat down with the room to rewrite the chore chart.', 'closed', 44, 9),
+(9, 'Sat down with the room to rewrite the chore chart.', 'closed', 44, 1),
 (10, 'Mediated a noise complaint between roommates.', 'closed', 140, 30),
 (11, 'Talked through the chore rotation after two open reports.', 'closed', 47, 10),
 (12, 'Followed up after a roommate filed back-to-back reports.', 'closed', 38, 8),
@@ -1248,98 +1293,98 @@ INSERT INTO RA_Intervention (RequestID, Description, Status, UserID, RA) VALUES
 -- the rule the API applies on every update. Where two roommates reported the same
 -- chore that is two rows and still one strike -- strikes count distinct chores.
 INSERT INTO Room_Reports (ReportID, Time_Reported, Reviewed_At, Status, TaskID, UserID, RequestID, Description) VALUES
-(1, '2026-07-09 20:25:00', NULL, 'open', 443, 3, 4, 'Bins were overflowing by Thursday and nobody touched them.'),
-(2, '2026-07-22 09:55:00', NULL, 'open', 449, 3, NULL, 'Microwave still has the same spill in it from last week.'),
-(3, '2026-07-28 15:50:00', NULL, 'open', 451, 5, NULL, 'Dishwasher has been sitting clean and full for four days.'),
-(4, '2026-08-11 08:35:00', NULL, 'open', 458, 5, NULL, 'Common room has not been vacuumed once this month.'),
-(5, '2026-08-06 22:55:00', '2026-08-09 18:15:00', 'reviewed', 456, 3, 3, 'Counters were not wiped at all that week.'),
-(6, '2026-06-26 13:05:00', '2026-06-28 20:55:00', 'closed', 436, 3, NULL, 'First week and the trash never went out.'),
-(7, '2026-06-30 22:15:00', '2026-07-02 20:45:00', 'closed', 438, 5, NULL, 'Bathroom was skipped on his week.'),
-(8, '2026-07-15 08:00:00', '2026-07-16 20:35:00', 'reviewed', 445, 3, NULL, 'Recycling piled up in the corner again.'),
-(9, '2026-07-29 15:15:00', NULL, 'open', 452, 4, NULL, 'Compost never made it out either, so it is not just me.'),
-(10, '2026-07-05 12:15:00', '2026-07-10 16:55:00', 'closed', 471, 43, NULL, 'Recycling did not go out on Friday.'),
-(11, '2026-07-19 22:25:00', '2026-07-21 14:35:00', 'reviewed', 479, 43, NULL, 'Microwave was skipped on the rotation.'),
-(12, '2026-08-01 22:50:00', '2026-08-04 19:25:00', 'reviewed', 486, 43, NULL, 'Second time the recycling has been missed this month.'),
-(13, '2026-08-10 17:35:00', NULL, 'open', 489, 43, NULL, 'Kitchen floor is still sticky, the mopping did not happen.'),
-(14, '2026-08-13 14:50:00', NULL, 'open', 492, 43, NULL, 'Dusting was due Tuesday and has not been started.'),
-(15, '2026-07-16 08:15:00', '2026-07-19 21:30:00', 'closed', 477, 43, NULL, 'Common room went unvacuumed for the week.'),
-(16, '2026-08-06 12:10:00', '2026-08-08 15:00:00', 'reviewed', 488, 43, NULL, 'Fridge is starting to smell and it was not cleared out.'),
-(17, '2026-08-13 09:31:00', NULL, 'open', 491, 43, NULL, 'Dishwasher has been full since Monday.'),
-(18, '2026-07-22 15:30:00', '2026-07-24 18:45:00', 'closed', 144, 65, NULL, 'Counters still have last night''s dishes on them.'),
-(19, '2026-07-01 12:30:00', '2026-07-06 09:35:00', 'reviewed', 17, 82, NULL, 'Paper towels ran out on Monday and were not restocked.'),
-(20, '2026-08-06 17:50:00', '2026-08-09 10:45:00', 'reviewed', 271, 32, NULL, 'Recycling is overflowing into the hallway again.'),
-(21, '2026-06-26 13:45:00', NULL, 'open', 15, 70, NULL, 'Mirror and sink were not wiped down on the rotation.'),
-(22, '2026-07-20 18:35:00', NULL, 'open', 164, 134, NULL, 'Kitchen floor is sticky, the mopping did not happen.'),
-(23, '2026-08-12 09:45:00', '2026-08-13 08:49:00', 'closed', 273, 39, NULL, 'Plants have not been watered, two of them are wilting.'),
-(24, '2026-08-01 10:25:00', '2026-08-05 12:30:00', 'reviewed', 485, 42, NULL, 'Counters still have last night''s dishes on them.'),
-(25, '2026-07-03 18:10:00', '2026-07-06 09:50:00', 'reviewed', 49, 69, NULL, 'Plants have not been watered, two of them are wilting.'),
-(26, '2026-08-07 10:40:00', NULL, 'open', 280, 61, NULL, 'Microwave still has the same spill in it.'),
-(27, '2026-07-15 19:25:00', '2026-07-16 13:20:00', 'closed', 82, 37, NULL, 'Trash was still by the door two days after it was due.'),
-(28, '2026-08-13 15:00:00', NULL, 'open', 324, 23, NULL, 'Paper towels ran out on Monday and were not restocked.'),
-(29, '2026-08-13 09:15:00', NULL, 'open', 317, 11, NULL, 'Hallway has not been swept since the rotation started.'),
-(30, '2026-07-28 18:50:00', NULL, 'open', 201, 111, NULL, 'Dishwasher has been full and clean for three days.'),
-(31, '2026-07-12 21:25:00', '2026-07-16 21:00:00', 'closed', 114, 119, NULL, 'Compost bin never made it out to the bin room.'),
-(32, '2026-07-09 11:15:00', '2026-07-11 15:05:00', 'reviewed', 50, 72, NULL, 'Dishwasher has been full and clean for three days.'),
-(33, '2026-07-13 19:30:00', '2026-07-16 20:55:00', 'closed', 97, 77, NULL, 'Counters still have last night''s dishes on them.'),
-(34, '2026-08-13 12:56:00', NULL, 'open', 357, 106, NULL, 'Hallway has not been swept since the rotation started.'),
-(35, '2026-07-30 22:40:00', '2026-07-31 11:30:00', 'reviewed', 215, 145, NULL, 'Paper towels ran out on Monday and were not restocked.'),
-(36, '2026-06-25 11:30:00', '2026-06-30 19:25:00', 'closed', 8, 48, NULL, 'Fridge is starting to smell -- nobody cleared it out.'),
-(37, '2026-07-02 09:55:00', '2026-07-05 21:30:00', 'closed', 34, 13, NULL, 'Microwave still has the same spill in it.'),
-(38, '2026-07-28 15:00:00', NULL, 'open', 238, 73, 45, 'Counters still have last night''s dishes on them.'),
-(39, '2026-07-03 21:35:00', '2026-07-06 11:00:00', 'reviewed', 41, 31, NULL, 'Plants have not been watered, two of them are wilting.'),
-(40, '2026-06-26 19:15:00', '2026-06-28 19:40:00', 'closed', 16, 77, NULL, 'Plants have not been watered, two of them are wilting.');
+(1, '2026-07-09 20:25:00', NULL, 'open', 443, 3, 4, 'Trash was still by the door two days after it was due.'),
+(2, '2026-07-22 09:55:00', NULL, 'open', 449, 3, NULL, 'Inside of the microwave has splatter baked onto the roof.'),
+(3, '2026-07-28 15:50:00', NULL, 'open', 451, 5, NULL, 'Dishwasher has been full and clean for three days.'),
+(4, '2026-08-11 08:35:00', NULL, 'open', 458, 5, NULL, 'Common room floor has not been vacuumed in over a week.'),
+(5, '2026-08-06 22:55:00', '2026-08-09 18:15:00', 'reviewed', 456, 3, 3, 'Worktop is still covered in crumbs and coffee rings.'),
+(6, '2026-06-26 13:05:00', '2026-06-28 20:55:00', 'closed', 436, 3, NULL, 'Bins were overflowing by Thursday and nobody touched them.'),
+(7, '2026-06-30 22:15:00', '2026-07-02 20:45:00', 'closed', 438, 5, NULL, 'Bathroom was skipped, the sink and the toilet are both still dirty.'),
+(8, '2026-07-15 08:00:00', '2026-07-16 20:35:00', 'reviewed', 445, 3, NULL, 'Second time the recycling has been missed this month.'),
+(9, '2026-07-29 15:15:00', NULL, 'open', 452, 4, NULL, 'Compost bin never made it out to the bin room.'),
+(10, '2026-07-05 12:15:00', '2026-07-10 16:55:00', 'closed', 471, 43, NULL, 'Recycling is overflowing into the hallway again.'),
+(11, '2026-07-19 22:25:00', '2026-07-21 14:35:00', 'reviewed', 479, 43, NULL, 'Inside of the microwave has splatter baked onto the roof.'),
+(12, '2026-08-01 22:50:00', '2026-08-04 19:25:00', 'reviewed', 486, 43, NULL, 'Recycling did not go out on Friday.'),
+(13, '2026-08-10 17:35:00', NULL, 'open', 489, 43, NULL, 'Floor by the fridge is tacky underfoot and has been all week.'),
+(14, '2026-08-13 14:50:00', NULL, 'open', 492, 43, NULL, 'Nobody dusted, you can write your name on the windowsill.'),
+(15, '2026-07-16 08:15:00', '2026-07-19 21:30:00', 'closed', 477, 43, NULL, 'Common room has not been vacuumed once this month.'),
+(16, '2026-08-06 12:10:00', '2026-08-08 15:00:00', 'reviewed', 488, 43, NULL, 'Old containers are still in the fridge well past their date.'),
+(17, '2026-08-13 09:31:00', NULL, 'open', 491, 43, NULL, 'Dishwasher never got emptied and dirty plates are stacking up beside it.'),
+(18, '2026-07-22 15:30:00', '2026-07-24 18:45:00', 'closed', 144, 65, NULL, 'Kitchen floor is still sticky, the mopping did not happen.'),
+(19, '2026-07-01 12:30:00', '2026-07-06 09:35:00', 'reviewed', 17, 82, NULL, 'Mirror is covered in toothpaste spots.'),
+(20, '2026-08-06 17:50:00', '2026-08-09 10:45:00', 'reviewed', 271, 32, NULL, 'Dishwasher never got emptied and dirty plates are stacking up beside it.'),
+(21, '2026-06-26 13:45:00', NULL, 'open', 15, 70, NULL, 'Doorknobs and light switches have not been wiped since last week.'),
+(22, '2026-07-20 18:35:00', NULL, 'open', 164, 134, NULL, 'We have been out of paper towels for most of the week.'),
+(23, '2026-08-12 09:45:00', '2026-08-13 08:49:00', 'closed', 273, 39, NULL, 'Shower tray has not been touched, it is going green in the corners.'),
+(24, '2026-08-01 10:25:00', '2026-08-05 12:30:00', 'reviewed', 485, 42, NULL, 'Hallway has not been swept since the rotation started.'),
+(25, '2026-07-03 18:10:00', '2026-07-06 09:50:00', 'reviewed', 49, 69, NULL, 'Nobody went round with the disinfectant, the handles are still grubby.'),
+(26, '2026-08-07 10:40:00', NULL, 'open', 280, 61, NULL, 'Hallway got skipped and the entry mat has not been shaken out either.'),
+(27, '2026-07-15 19:25:00', '2026-07-16 13:20:00', 'closed', 82, 37, NULL, 'Mirror and sink were not wiped down on the rotation.'),
+(28, '2026-08-13 15:00:00', NULL, 'open', 324, 23, NULL, 'Nobody sorted the bins, cardboard is mixed in with the glass.'),
+(29, '2026-08-13 09:15:00', NULL, 'open', 317, 11, NULL, 'Kitchen bin was left to overflow onto the floor.'),
+(30, '2026-07-28 18:50:00', NULL, 'open', 201, 111, NULL, 'Kitchen floor is still sticky, the mopping did not happen.'),
+(31, '2026-07-12 21:25:00', '2026-07-16 21:00:00', 'closed', 114, 119, NULL, 'Nobody went round with the disinfectant, the handles are still grubby.'),
+(32, '2026-07-09 11:15:00', '2026-07-11 15:05:00', 'reviewed', 50, 72, NULL, 'Shower tray has not been touched, it is going green in the corners.'),
+(33, '2026-07-13 19:30:00', '2026-07-16 20:55:00', 'closed', 97, 77, NULL, 'Doorknobs and light switches have not been wiped since last week.'),
+(34, '2026-08-13 12:56:00', NULL, 'open', 357, 106, NULL, 'Counters were not wiped at all that week.'),
+(35, '2026-07-30 22:40:00', '2026-07-31 11:30:00', 'reviewed', 215, 145, NULL, 'Rug in the common room is still covered in crumbs.'),
+(36, '2026-06-25 11:30:00', '2026-06-30 19:25:00', 'closed', 8, 48, NULL, 'Plants have not been watered, two of them are wilting.'),
+(37, '2026-07-02 09:55:00', '2026-07-05 21:30:00', 'closed', 34, 13, NULL, 'The big plant by the window has dropped half its leaves.'),
+(38, '2026-07-28 15:00:00', NULL, 'open', 238, 73, 45, 'Nobody watered the plants, the soil is bone dry.'),
+(39, '2026-07-03 21:35:00', '2026-07-06 11:00:00', 'reviewed', 41, 31, NULL, 'Dishwasher has been full and clean for three days.'),
+(40, '2026-06-26 19:15:00', '2026-06-28 19:40:00', 'closed', 16, 77, NULL, 'Nobody went round with the disinfectant, the handles are still grubby.');
 
 INSERT INTO Room_Reports (ReportID, Time_Reported, Reviewed_At, Status, TaskID, UserID, RequestID, Description) VALUES
-(41, '2026-06-30 16:35:00', '2026-07-03 11:15:00', 'reviewed', 44, 49, NULL, 'Recycling is overflowing into the hallway again.'),
-(42, '2026-08-08 12:40:00', '2026-08-12 13:20:00', 'reviewed', 266, 22, NULL, 'Recycling is overflowing into the hallway again.'),
-(43, '2026-07-05 22:45:00', '2026-07-06 16:30:00', 'closed', 47, 65, NULL, 'Counters still have last night''s dishes on them.'),
-(44, '2026-08-01 08:35:00', '2026-08-03 20:20:00', 'closed', 251, 116, NULL, 'Microwave still has the same spill in it.'),
-(45, '2026-08-04 10:55:00', '2026-08-07 20:05:00', 'reviewed', 233, 57, NULL, 'Compost bin never made it out to the bin room.'),
-(46, '2026-07-09 18:15:00', '2026-07-14 11:05:00', 'closed', 125, 146, NULL, 'Recycling is overflowing into the hallway again.'),
-(47, '2026-07-12 19:10:00', '2026-07-13 16:05:00', 'reviewed', 91, 64, NULL, 'Microwave still has the same spill in it.'),
-(48, '2026-06-28 21:20:00', '2026-06-29 12:05:00', 'closed', 31, 141, NULL, 'Kitchen floor is sticky, the mopping did not happen.'),
-(49, '2026-08-11 17:35:00', '2026-08-12 12:00:00', 'closed', 356, 104, NULL, 'Paper towels ran out on Monday and were not restocked.'),
-(50, '2026-08-10 22:10:00', NULL, 'open', 287, 75, NULL, 'Compost bin never made it out to the bin room.'),
-(51, '2026-08-11 10:05:00', '2026-08-13 14:30:00', 'closed', 270, 32, NULL, 'Common room floor has not been vacuumed in over a week.'),
-(52, '2026-08-08 10:25:00', '2026-08-10 09:05:00', 'reviewed', 296, 95, NULL, 'Dishwasher has been full and clean for three days.'),
-(53, '2026-07-14 19:05:00', NULL, 'open', 120, 134, 44, 'Trash was still by the door two days after it was due.'),
-(54, '2026-08-05 21:50:00', '2026-08-09 18:20:00', 'reviewed', 237, 72, NULL, 'Counters still have last night''s dishes on them.'),
-(55, '2026-07-03 19:00:00', '2026-07-05 19:40:00', 'reviewed', 58, 97, NULL, 'Mirror and sink were not wiped down on the rotation.'),
-(56, '2026-08-13 14:09:00', '2026-08-13 15:40:00', 'closed', 349, 85, NULL, 'Shower is due for a scrub, it got skipped.'),
-(57, '2026-07-28 22:40:00', NULL, 'open', 175, 39, NULL, 'Common room floor has not been vacuumed in over a week.'),
-(58, '2026-06-30 08:35:00', '2026-07-02 12:05:00', 'reviewed', 18, 84, NULL, 'Bathroom has not been touched this week.'),
-(59, '2026-07-22 12:05:00', '2026-07-24 11:30:00', 'reviewed', 163, 133, NULL, 'Recycling is overflowing into the hallway again.'),
-(60, '2026-07-20 14:45:00', NULL, 'open', 136, 38, NULL, 'Microwave still has the same spill in it.'),
-(61, '2026-07-14 16:35:00', NULL, 'open', 69, 2, 114, 'Counters still have last night''s dishes on them.'),
-(62, '2026-07-17 12:15:00', '2026-07-22 14:40:00', 'closed', 133, 31, NULL, 'Plants have not been watered, two of them are wilting.'),
-(63, '2026-08-07 15:55:00', NULL, 'open', 275, 48, NULL, 'Bathroom has not been touched this week.'),
-(64, '2026-07-28 08:45:00', '2026-08-02 19:30:00', 'reviewed', 173, 31, NULL, 'Counters still have last night''s dishes on them.'),
-(65, '2026-07-10 18:50:00', '2026-07-11 17:15:00', 'closed', 94, 70, NULL, 'Plants have not been watered, two of them are wilting.'),
-(66, '2026-07-17 15:00:00', '2026-07-21 21:50:00', 'reviewed', 156, 104, NULL, 'Compost bin never made it out to the bin room.'),
-(67, '2026-07-30 13:25:00', NULL, 'open', 197, 100, NULL, 'Plants have not been watered, two of them are wilting.'),
-(68, '2026-07-07 19:50:00', '2026-07-10 17:45:00', 'reviewed', 56, 92, NULL, 'Shower is due for a scrub, it got skipped.'),
-(69, '2026-07-10 15:55:00', NULL, 'open', 108, 103, NULL, 'Bathroom has not been touched this week.'),
-(70, '2026-07-09 20:35:00', NULL, 'open', 106, 96, 68, 'Mirror and sink were not wiped down on the rotation.'),
-(71, '2026-08-13 10:25:00', NULL, 'open', 351, 94, NULL, 'Microwave still has the same spill in it.'),
-(72, '2026-08-02 18:25:00', '2026-08-06 14:10:00', 'closed', 259, 142, NULL, 'Counters still have last night''s dishes on them.'),
-(73, '2026-08-10 22:45:00', NULL, 'open', 268, 27, NULL, 'Shower is due for a scrub, it got skipped.'),
-(74, '2026-08-06 15:25:00', '2026-08-07 21:00:00', 'closed', 229, 38, NULL, 'Shower is due for a scrub, it got skipped.'),
-(75, '2026-07-07 14:40:00', '2026-07-11 19:40:00', 'reviewed', 42, 33, NULL, 'Bathroom has not been touched this week.'),
-(76, '2026-07-07 12:30:00', '2026-07-09 15:50:00', 'reviewed', 42, 35, NULL, 'Kitchen floor is sticky, the mopping did not happen.'),
-(77, '2026-08-04 11:25:00', NULL, 'open', 221, 16, NULL, 'Dishwasher has been full and clean for three days.'),
-(78, '2026-08-03 09:15:00', NULL, 'open', 235, 63, NULL, 'Fridge is starting to smell -- nobody cleared it out.'),
-(79, '2026-08-06 12:35:00', '2026-08-09 09:10:00', 'reviewed', 274, 41, NULL, 'Common room floor has not been vacuumed in over a week.'),
-(80, '2026-07-17 21:55:00', NULL, 'open', 140, 52, NULL, 'Dishwasher has been full and clean for three days.');
+(41, '2026-06-30 16:35:00', '2026-07-03 11:15:00', 'reviewed', 44, 49, NULL, 'Nobody watered the plants, the soil is bone dry.'),
+(42, '2026-08-08 12:40:00', '2026-08-12 13:20:00', 'reviewed', 266, 22, NULL, 'Recycling piled up in the corner again.'),
+(43, '2026-07-05 22:45:00', '2026-07-06 16:30:00', 'closed', 47, 65, NULL, 'Floor by the fridge is tacky underfoot and has been all week.'),
+(44, '2026-08-01 08:35:00', '2026-08-03 20:20:00', 'closed', 251, 116, NULL, 'Nobody replaced the paper towels, the holder is still empty.'),
+(45, '2026-08-04 10:55:00', '2026-08-07 20:05:00', 'reviewed', 233, 57, NULL, 'Common room has not been vacuumed once this month.'),
+(46, '2026-07-09 18:15:00', '2026-07-14 11:05:00', 'closed', 125, 146, NULL, 'Clean load is still sitting in the dishwasher, so the sink is filling up.'),
+(47, '2026-07-12 19:10:00', '2026-07-13 16:05:00', 'reviewed', 91, 64, NULL, 'Nobody dusted, you can write your name on the windowsill.'),
+(48, '2026-06-28 21:20:00', '2026-06-29 12:05:00', 'closed', 31, 141, NULL, 'Hallway has not been swept since the rotation started.'),
+(49, '2026-08-11 17:35:00', '2026-08-12 12:00:00', 'closed', 356, 104, NULL, 'The big plant by the window has dropped half its leaves.'),
+(50, '2026-08-10 22:10:00', NULL, 'open', 287, 75, NULL, 'Nobody dusted, you can write your name on the windowsill.'),
+(51, '2026-08-11 10:05:00', '2026-08-13 14:30:00', 'closed', 270, 32, NULL, 'Dusting was due Tuesday and has not been started.'),
+(52, '2026-08-08 10:25:00', '2026-08-10 09:05:00', 'reviewed', 296, 95, NULL, 'Counters were not wiped at all that week.'),
+(53, '2026-07-14 19:05:00', NULL, 'open', 120, 134, 44, 'Nobody cleaned the bathroom on their week.'),
+(54, '2026-08-05 21:50:00', '2026-08-09 18:20:00', 'reviewed', 237, 72, NULL, 'Shower is due for a scrub and it got skipped.'),
+(55, '2026-07-03 19:00:00', '2026-07-05 19:40:00', 'reviewed', 58, 97, NULL, 'Recycling is overflowing into the hallway again.'),
+(56, '2026-08-13 14:09:00', '2026-08-13 15:40:00', 'closed', 349, 85, NULL, 'Second time the recycling has been missed this month.'),
+(57, '2026-07-28 22:40:00', NULL, 'open', 175, 39, NULL, 'Shower is due for a scrub and it got skipped.'),
+(58, '2026-06-30 08:35:00', '2026-07-02 12:05:00', 'reviewed', 18, 84, NULL, 'We have been out of paper towels for most of the week.'),
+(59, '2026-07-22 12:05:00', '2026-07-24 11:30:00', 'reviewed', 163, 133, NULL, 'Nobody cleaned the bathroom on their week.'),
+(60, '2026-07-20 14:45:00', NULL, 'open', 136, 38, NULL, 'Shower is due for a scrub and it got skipped.'),
+(61, '2026-07-14 16:35:00', NULL, 'open', 69, 2, 114, 'Old containers are still in the fridge well past their date.'),
+(62, '2026-07-17 12:15:00', '2026-07-22 14:40:00', 'closed', 133, 31, NULL, 'Dishwasher never got emptied and dirty plates are stacking up beside it.'),
+(63, '2026-08-07 15:55:00', NULL, 'open', 275, 48, NULL, 'Plants have not been watered, two of them are wilting.'),
+(64, '2026-07-28 08:45:00', '2026-08-02 19:30:00', 'reviewed', 173, 31, NULL, 'Microwave was skipped on the rotation.'),
+(65, '2026-07-10 18:50:00', '2026-07-11 17:15:00', 'closed', 94, 70, NULL, 'Door handles were skipped again on this week''s turn.'),
+(66, '2026-07-17 15:00:00', '2026-07-21 21:50:00', 'reviewed', 156, 104, NULL, 'Plants have not been watered, two of them are wilting.'),
+(67, '2026-07-30 13:25:00', NULL, 'open', 197, 100, NULL, 'There is still soap scum along the shower door from last week.'),
+(68, '2026-07-07 19:50:00', '2026-07-10 17:45:00', 'reviewed', 56, 92, NULL, 'Nobody cleaned the bathroom on their week.'),
+(69, '2026-07-10 15:55:00', NULL, 'open', 108, 103, NULL, 'Plants have not been watered, two of them are wilting.'),
+(70, '2026-07-09 20:35:00', NULL, 'open', 106, 96, 68, 'Recycling is overflowing into the hallway again.'),
+(71, '2026-08-13 10:25:00', NULL, 'open', 351, 94, NULL, 'Worktop is still covered in crumbs and coffee rings.'),
+(72, '2026-08-02 18:25:00', '2026-08-06 14:10:00', 'closed', 259, 142, NULL, 'Dusting was due Tuesday and has not been started.'),
+(73, '2026-08-10 22:45:00', NULL, 'open', 268, 27, NULL, 'Old containers are still in the fridge well past their date.'),
+(74, '2026-08-06 15:25:00', '2026-08-07 21:00:00', 'closed', 229, 38, NULL, 'Shower tray has not been touched, it is going green in the corners.'),
+(75, '2026-07-07 14:40:00', '2026-07-11 19:40:00', 'reviewed', 42, 33, NULL, 'Mirror and sink were not wiped down on the rotation.'),
+(76, '2026-07-07 12:30:00', '2026-07-09 15:50:00', 'reviewed', 42, 35, NULL, 'Mirror is covered in toothpaste spots.'),
+(77, '2026-08-04 11:25:00', NULL, 'open', 221, 16, NULL, 'Shower tray has not been touched, it is going green in the corners.'),
+(78, '2026-08-03 09:15:00', NULL, 'open', 235, 63, NULL, 'Dusting was due Tuesday and has not been started.'),
+(79, '2026-08-06 12:35:00', '2026-08-09 09:10:00', 'reviewed', 274, 41, NULL, 'Clean load is still sitting in the dishwasher, so the sink is filling up.'),
+(80, '2026-07-17 21:55:00', NULL, 'open', 140, 52, NULL, 'Compost was skipped, there are fruit flies around it now.');
 
 INSERT INTO Room_Reports (ReportID, Time_Reported, Reviewed_At, Status, TaskID, UserID, RequestID, Description) VALUES
-(81, '2026-08-07 12:40:00', NULL, 'open', 312, 141, NULL, 'Counters still have last night''s dishes on them.'),
-(82, '2026-08-12 16:20:00', '2026-08-13 11:20:00', 'closed', 311, 139, NULL, 'Microwave still has the same spill in it.'),
-(83, '2026-07-24 10:00:00', '2026-07-28 16:00:00', 'reviewed', 187, 68, NULL, 'Fridge is starting to smell -- nobody cleared it out.'),
-(84, '2026-07-12 14:25:00', NULL, 'open', 90, 60, NULL, 'Common room floor has not been vacuumed in over a week.'),
-(85, '2026-08-05 16:50:00', '2026-08-07 14:10:00', 'reviewed', 236, 65, NULL, 'Fridge is starting to smell -- nobody cleared it out.'),
-(86, '2026-08-07 09:25:00', '2026-08-10 13:55:00', 'closed', 292, 86, NULL, 'Hallway has not been swept since the rotation started.'),
-(87, '2026-08-10 13:55:00', NULL, 'open', 284, 71, NULL, 'Counters still have last night''s dishes on them.'),
-(88, '2026-07-20 08:45:00', NULL, 'open', 166, 140, 81, 'Microwave still has the same spill in it.');
+(81, '2026-08-07 12:40:00', NULL, 'open', 312, 141, NULL, 'Hallway has not been swept since the rotation started.'),
+(82, '2026-08-12 16:20:00', '2026-08-13 11:20:00', 'closed', 311, 139, NULL, 'Mirror is covered in toothpaste spots.'),
+(83, '2026-07-24 10:00:00', '2026-07-28 16:00:00', 'reviewed', 187, 68, NULL, 'Door handles were skipped again on this week''s turn.'),
+(84, '2026-07-12 14:25:00', NULL, 'open', 90, 60, NULL, 'Hallway has not been swept since the rotation started.'),
+(85, '2026-08-05 16:50:00', '2026-08-07 14:10:00', 'reviewed', 236, 65, NULL, 'Floor by the fridge is tacky underfoot and has been all week.'),
+(86, '2026-08-07 09:25:00', '2026-08-10 13:55:00', 'closed', 292, 86, NULL, 'Second time the recycling has been missed this month.'),
+(87, '2026-08-10 13:55:00', NULL, 'open', 284, 71, NULL, 'Doorknobs and light switches have not been wiped since last week.'),
+(88, '2026-07-20 08:45:00', NULL, 'open', 166, 140, 81, 'There is still grit and crumbs the length of the hallway.');
 
 -- Away periods. Some are running right now, some are still ahead -- My Away only
 -- lets you edit a period that has not ended, so a resident with nothing but past
@@ -1444,7 +1489,7 @@ INSERT INTO Logs (Log_Id, UserId, `Timestamp`, `Action`, ReviewerID) VALUES
 (16, 86, '2026-06-25 21:20:00', 'Marked chore #19 ''Wipe down bathroom mirror'' as done', 3),
 (17, 17, '2026-06-26 09:55:00', 'Submitted a maintenance request (#120)', 1),
 (18, 18, '2026-06-26 11:20:00', 'Marked chore #4 ''Mop the kitchen floor'' as done', 2),
-(19, 22, '2026-06-26 13:00:00', 'Submitted a chore_swap request (#132)', 6),
+(19, 22, '2026-06-26 13:00:00', 'Submitted a swap request (#132)', 6),
 (20, 77, '2026-06-26 19:15:00', 'Filed report #40 on chore #16', 2),
 (21, 125, '2026-06-26 20:25:00', 'Marked chore #29 ''Vacuum the common room'' as done', NULL),
 (22, 116, '2026-06-26 21:20:00', 'Marked chore #26 ''Restock paper towels'' as done', NULL),
@@ -1707,7 +1752,7 @@ INSERT INTO Rules (RuleID, UserID, Descr, RA_ID, DormID, Room_Number) VALUES
 (26, NULL, 'Bathroom is cleaned on a rotating weekly schedule, posted on the door.', 8, 3, 214),
 (27, NULL, 'If you swap a chore, log the swap in the app so the rotation stays honest.', 9, 3, 304),
 (28, 44, 'Dishes go in the dishwasher the same day they are used.', NULL, 3, 406),
-(29, NULL, 'Shoes off past the entryway -- the floor gets mopped once a week, not twice.', 9, 3, 406),
+(29, NULL, 'Shoes off past the entryway -- the floor gets mopped once a week, not twice.', 1, 3, 406),
 (30, 53, 'Bikes are stored in the bike room, not in the hallway or stairwell.', NULL, 4, 306),
 (31, NULL, 'Noise complaints go to the RA rather than being handled resident-to-resident.', 12, 5, 114),
 (32, NULL, 'Quiet hours begin at 10:00 PM on weeknights and midnight on weekends.', 12, 5, 114),
@@ -1746,6 +1791,318 @@ INSERT INTO Rules (RuleID, UserID, Descr, RA_ID, DormID, Room_Number) VALUES
 (63, NULL, 'Bikes are stored in the bike room, not in the hallway or stairwell.', 30, 14, 215),
 (64, NULL, 'Trash goes out Sunday night, before the hallway bins are emptied Monday.', 31, 14, 315),
 (65, NULL, 'Dishes go in the dishwasher the same day they are used.', 31, 14, 407);
+
+-- ===========================================================================
+-- THE PAPER TRAIL BEHIND EVERY MISS
+--
+-- 'missed' is not a state a chore drifts into. Nothing in the app writes it except
+-- an RA upholding a report (PUT /room_report/room_reports/<id> with uphold=true),
+-- which means every missed chore in here has to have a report behind it and a
+-- roommate who filed that report. Seeded straight, 21 misses had no such row: the
+-- resident's completion rate had been marked down by nobody, and opening the chore
+-- showed a strike with no accusation attached to it.
+-- ===========================================================================
+
+-- Room_Reports.UserID is the roommate who filed. One row had the resident reporting
+-- their own chore, which POST /room_report/room_reports refuses outright.
+UPDATE Room_Reports rp
+JOIN Tasks t  ON t.Task_ID = rp.TaskID
+JOIN Users a  ON a.UserID = t.Assigned_UserID
+JOIN (
+    SELECT accused.UserID AS accused, mate.UserID AS filer,
+           ROW_NUMBER() OVER (PARTITION BY accused.UserID ORDER BY mate.UserID) AS rn
+    FROM Users accused
+    JOIN Users mate
+      ON mate.DormID = accused.DormID AND mate.Room_Number = accused.Room_Number
+     AND mate.UserID <> accused.UserID
+) pick ON pick.accused = a.UserID AND pick.rn = 1
+SET rp.UserID = pick.filer
+WHERE rp.UserID = t.Assigned_UserID;
+
+-- A resident with the room to themselves has nobody who could file on them, so their
+-- chore could never have been marked down. It goes back to being open and overdue,
+-- which is what an unreported skipped chore actually looks like in this app.
+UPDATE Tasks t
+JOIN Users a ON a.UserID = t.Assigned_UserID
+LEFT JOIN (SELECT DISTINCT TaskID FROM Room_Reports WHERE TaskID IS NOT NULL) seen
+       ON seen.TaskID = t.Task_ID
+SET t.status = 'todo'
+WHERE t.status = 'missed' AND seen.TaskID IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM Users m
+      WHERE m.DormID = a.DormID AND m.Room_Number = a.Room_Number
+        AND m.UserID <> a.UserID
+  );
+
+-- Every remaining unexplained miss gets the report that produced it: filed by a
+-- roommate a couple of days after the deadline, upheld by the RA a couple of days
+-- after that. 'reviewed' is the status the Uphold button writes, and upholding is
+-- what marked the chore. Both timestamps are clamped to the day this seed is
+-- anchored to, so nothing is filed or ruled on in the future.
+INSERT INTO Room_Reports (Time_Reported, Reviewed_At, Status, TaskID, UserID, Description)
+SELECT LEAST(t.due_date + INTERVAL (2 + t.Task_ID % 3) DAY
+                        + INTERVAL (9 + t.Task_ID % 12) HOUR,
+             '2026-08-13 09:00:00'),
+       LEAST(t.due_date + INTERVAL (5 + t.Task_ID % 3) DAY
+                        + INTERVAL (14 + t.Task_ID % 6) HOUR,
+             '2026-08-13 17:00:00'),
+       'reviewed', t.Task_ID, pick.filer,
+       ELT(1 + t.Task_ID % 4,
+           CONCAT(t.Task_Name, ' did not happen on their week.'),
+           CONCAT('Nobody got round to it -- ', LOWER(t.Task_Name),
+                  ' was still outstanding days after it was due.'),
+           CONCAT(t.Task_Name, ' was skipped again on this rotation.'),
+           CONCAT('Asked about ', LOWER(t.Task_Name),
+                  ' twice and it still was not done.'))
+FROM Tasks t
+JOIN Users a ON a.UserID = t.Assigned_UserID
+JOIN (
+    SELECT accused.UserID AS accused, mate.UserID AS filer,
+           ROW_NUMBER() OVER (PARTITION BY accused.UserID ORDER BY mate.UserID) AS rn
+    FROM Users accused
+    JOIN Users mate
+      ON mate.DormID = accused.DormID AND mate.Room_Number = accused.Room_Number
+     AND mate.UserID <> accused.UserID
+) pick ON pick.accused = a.UserID AND pick.rn = 1
+LEFT JOIN (SELECT DISTINCT TaskID FROM Room_Reports WHERE TaskID IS NOT NULL) seen
+       ON seen.TaskID = t.Task_ID
+WHERE t.status = 'missed' AND seen.TaskID IS NULL AND t.due_date IS NOT NULL;
+
+-- ===========================================================================
+-- SETTLED REQUESTS, CARRIED OUT
+--
+-- A request row says what was asked for and what the answer was. It does not say
+-- what happened next, and until now nothing in this file did either: the seed had
+-- ten resolved extensions whose chores still carried the old deadline, seven
+-- resolved swaps still assigned to the person who asked to be rid of them, and
+-- every dispute and expunction pointing at nothing at all. Read one page it looked
+-- settled; read the next and the chore chart had never heard of it.
+--
+-- PUT /request/requests/<id> does all of this on the live app the moment a request
+-- crosses into 'resolved' (see _resolve_effect). These statements are the same
+-- rules applied to the rows that were seeded already decided, so a demo account
+-- reads the same whether the request was settled in the seed or in the app.
+-- ===========================================================================
+
+-- An approved extension moved a deadline. Where a chore collected more than one,
+-- the last one decided is the one that stands.
+UPDATE Tasks t
+JOIN (
+    SELECT Task_ID, Request_ID, Proposed_Due_Date
+    FROM (
+        SELECT Task_ID, Request_ID, Proposed_Due_Date,
+               ROW_NUMBER() OVER (PARTITION BY Task_ID
+                                  ORDER BY Created_At DESC, Request_ID DESC) AS rn
+        FROM Requests
+        WHERE Request_Type = 'extension' AND Status = 'resolved'
+          AND Task_ID IS NOT NULL AND Proposed_Due_Date IS NOT NULL
+    ) ranked
+    WHERE rn = 1
+) ext ON ext.Task_ID = t.Task_ID
+SET t.due_date   = ext.Proposed_Due_Date,
+    t.Request_ID = ext.Request_ID;
+
+-- An accepted swap is a chore that changed hands. Nothing records who accepted, so it
+-- goes to the roommate the app would have offered it to first -- the other resident of
+-- the room, lowest id where there are two of them. Anyone who filed a report about that
+-- chore is not a candidate: handing it to them makes them the person their own report
+-- names, which POST /room_report/room_reports would never have allowed.
+UPDATE Tasks t
+JOIN Requests r
+  ON r.Task_ID = t.Task_ID AND r.Request_Type = 'swap' AND r.Status = 'resolved'
+JOIN (
+    SELECT r.Task_ID, mate.UserID AS taker,
+           ROW_NUMBER() OVER (PARTITION BY r.Task_ID ORDER BY mate.UserID) AS rn
+    FROM Requests r
+    JOIN Users asker ON asker.UserID = r.Requested_By_UserID
+    JOIN Users mate
+      ON mate.DormID = asker.DormID AND mate.Room_Number = asker.Room_Number
+     AND mate.UserID <> asker.UserID
+    LEFT JOIN Room_Reports rp ON rp.TaskID = r.Task_ID AND rp.UserID = mate.UserID
+    WHERE r.Request_Type = 'swap' AND r.Status = 'resolved' AND rp.ReportID IS NULL
+) pick ON pick.Task_ID = t.Task_ID AND pick.rn = 1
+SET t.Assigned_UserID = pick.taker,
+    t.Request_ID      = r.Request_ID
+WHERE t.Assigned_UserID = r.Requested_By_UserID;
+
+-- A swap needs somebody to swap with. One of these was filed by a resident with the
+-- room to themselves and seeded as accepted, which nobody was there to do.
+UPDATE Requests r
+JOIN Tasks t ON t.Task_ID = r.Task_ID
+SET r.Status = 'rejected',
+    r.Reason = CONCAT(r.Reason, ' (No roommate to take it on.)')
+WHERE r.Request_Type = 'swap' AND r.Status = 'resolved'
+  AND t.Assigned_UserID = r.Requested_By_UserID;
+
+-- The other half of a two-sided trade: what the requester asked for in return comes
+-- back to them.
+UPDATE Tasks t
+JOIN Requests r
+  ON r.Offered_Task_ID = t.Task_ID AND r.Request_Type = 'swap' AND r.Status = 'resolved'
+SET t.Assigned_UserID = r.Requested_By_UserID
+WHERE t.Assigned_UserID <> r.Requested_By_UserID;
+
+-- A dispute contests one chore having been marked missed, so it has to name that
+-- chore -- an appeal that names nothing cannot be ruled on, and the RA's Approve
+-- button on one did nothing but turn the row green. Each of a resident's disputes
+-- takes a different miss of theirs, oldest first.
+UPDATE Requests r
+JOIN (
+    SELECT Request_ID,
+           ROW_NUMBER() OVER (PARTITION BY Requested_By_UserID
+                              ORDER BY Created_At, Request_ID) AS rn,
+           Requested_By_UserID AS uid
+    FROM Requests
+    WHERE Request_Type = 'dispute' AND Task_ID IS NULL
+) d ON d.Request_ID = r.Request_ID
+JOIN (
+    SELECT Task_ID, Assigned_UserID AS uid,
+           ROW_NUMBER() OVER (PARTITION BY Assigned_UserID
+                              ORDER BY due_date, Task_ID) AS rn
+    FROM Tasks
+    WHERE status = 'missed'
+) m ON m.uid = d.uid AND m.rn = d.rn
+SET r.Task_ID = m.Task_ID;
+
+-- An upheld dispute is a mark that came off: the chore goes back to open and the
+-- reports that put it there are settled by the same ruling.
+UPDATE Tasks t
+JOIN Requests r
+  ON r.Task_ID = t.Task_ID AND r.Request_Type = 'dispute' AND r.Status = 'resolved'
+SET t.status = 'todo'
+WHERE t.status = 'missed';
+
+UPDATE Room_Reports rp
+JOIN Requests r ON r.Task_ID = rp.TaskID
+SET rp.Status      = 'closed',
+    rp.Reviewed_At = COALESCE(rp.Reviewed_At, r.Created_At + INTERVAL 2 DAY)
+WHERE r.Request_Type = 'dispute' AND r.Status = 'resolved' AND rp.Status = 'open';
+
+-- An expunction asks for one named strike to come off, and Room_Reports.RequestID is
+-- what names it. Each appeal takes a different report about its filer, matched to the
+-- state the answer implies: one still waiting goes on a strike still open, one that
+-- was upheld goes on a strike that closed.
+UPDATE Room_Reports rp
+JOIN Tasks t ON t.Task_ID = rp.TaskID
+JOIN (
+    SELECT ReportID,
+           ROW_NUMBER() OVER (PARTITION BY t.Assigned_UserID
+                              ORDER BY rp.Time_Reported, rp.ReportID) AS rn,
+           t.Assigned_UserID AS uid
+    FROM Room_Reports rp JOIN Tasks t ON t.Task_ID = rp.TaskID
+    WHERE rp.RequestID IS NULL AND rp.Status = 'open'
+) s ON s.ReportID = rp.ReportID
+JOIN (
+    SELECT Request_ID, Requested_By_UserID AS uid,
+           ROW_NUMBER() OVER (PARTITION BY Requested_By_UserID
+                              ORDER BY Created_At, Request_ID) AS rn
+    FROM Requests
+    WHERE Request_Type = 'expunction' AND Status IN ('open', 'in_progress')
+) a ON a.uid = s.uid AND a.rn = s.rn
+SET rp.RequestID = a.Request_ID;
+
+UPDATE Room_Reports rp
+JOIN Tasks t ON t.Task_ID = rp.TaskID
+JOIN (
+    SELECT ReportID,
+           ROW_NUMBER() OVER (PARTITION BY t.Assigned_UserID
+                              ORDER BY rp.Time_Reported, rp.ReportID) AS rn,
+           t.Assigned_UserID AS uid
+    FROM Room_Reports rp JOIN Tasks t ON t.Task_ID = rp.TaskID
+    WHERE rp.RequestID IS NULL
+) s ON s.ReportID = rp.ReportID
+JOIN (
+    SELECT Request_ID, Created_At, Requested_By_UserID AS uid,
+           ROW_NUMBER() OVER (PARTITION BY Requested_By_UserID
+                              ORDER BY Created_At, Request_ID) AS rn
+    FROM Requests
+    WHERE Request_Type = 'expunction' AND Status = 'resolved'
+) a ON a.uid = s.uid AND a.rn = s.rn
+SET rp.RequestID  = a.Request_ID,
+    rp.Status     = 'closed',
+    rp.Reviewed_At = COALESCE(rp.Reviewed_At, a.Created_At + INTERVAL 2 DAY);
+
+-- A refused appeal changes nothing about the strike, so this one only records which
+-- strike was argued over.
+UPDATE Room_Reports rp
+JOIN Tasks t ON t.Task_ID = rp.TaskID
+JOIN (
+    SELECT ReportID,
+           ROW_NUMBER() OVER (PARTITION BY t.Assigned_UserID
+                              ORDER BY rp.Time_Reported, rp.ReportID) AS rn,
+           t.Assigned_UserID AS uid
+    FROM Room_Reports rp JOIN Tasks t ON t.Task_ID = rp.TaskID
+    WHERE rp.RequestID IS NULL
+) s ON s.ReportID = rp.ReportID
+JOIN (
+    SELECT Request_ID, Requested_By_UserID AS uid,
+           ROW_NUMBER() OVER (PARTITION BY Requested_By_UserID
+                              ORDER BY Created_At, Request_ID) AS rn
+    FROM Requests
+    WHERE Request_Type = 'expunction' AND Status = 'rejected'
+) a ON a.uid = s.uid AND a.rn = s.rn
+SET rp.RequestID = a.Request_ID;
+
+-- What is left over is an appeal from a resident who has no such mark against them:
+-- a dispute over a chore they never missed, or a strike appeal with no strike. Those
+-- were filler, and filler that reaches an RA's queue is worse than no row at all --
+-- it is a decision that cannot be carried out. The log lines announcing them go with
+-- them, since the request they name no longer exists.
+DELETE l FROM Logs l
+JOIN Requests r
+  ON r.Request_ID = CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(l.Action, '#', -1), ')', 1)
+                        AS UNSIGNED)
+WHERE l.Action LIKE '%request (#%'
+  AND ((r.Request_Type = 'dispute' AND r.Task_ID IS NULL)
+    OR (r.Request_Type = 'expunction'
+        AND NOT EXISTS (SELECT 1 FROM Room_Reports rp
+                        WHERE rp.RequestID = r.Request_ID)));
+
+DELETE FROM Requests WHERE Request_Type = 'dispute' AND Task_ID IS NULL;
+
+DELETE FROM Requests
+WHERE Request_Type = 'expunction'
+  AND Request_ID NOT IN (SELECT RequestID FROM Room_Reports WHERE RequestID IS NOT NULL);
+
+-- 'reviewed' is the RA agreeing with a report, and agreeing is what marks the chore.
+-- So a reviewed report has to sit on a chore that is missed -- or on one with a reason
+-- it is not: finished after the report was filed, which the API refuses to mark down,
+-- or un-marked afterwards by a dispute that was upheld. Anything else was an RA
+-- agreeing with a report about a chore that is sitting open and unmarked, which the
+-- Uphold button cannot produce. Those read as the other ruling: dismissed.
+UPDATE Room_Reports rp
+JOIN Tasks t ON t.Task_ID = rp.TaskID
+SET rp.Status = 'closed'
+WHERE rp.Status = 'reviewed'
+  AND t.status NOT IN ('missed', 'done')
+  AND NOT EXISTS (
+      SELECT 1 FROM Requests r
+      WHERE r.Task_ID = t.Task_ID AND r.Request_Type = 'dispute'
+        AND r.Status = 'resolved'
+  );
+
+-- RAs.Settled_Reqs / Settled_Reps are the same kind of denormalised counter as the
+-- two on Users, and the app moves Settled_Reps every time an RA rules on a report.
+-- Deriving them here means the admin leaderboard counts the rows that are actually
+-- in the database rather than a number typed above them.
+UPDATE RAs ra
+LEFT JOIN (
+    SELECT u.RA AS ra_id, COUNT(*) AS settled
+    FROM Requests r
+    JOIN Users u ON u.UserID = r.Requested_By_UserID
+    WHERE r.Status IN ('resolved', 'rejected') AND u.RA IS NOT NULL
+    GROUP BY u.RA
+) q ON q.ra_id = ra.RA_ID
+LEFT JOIN (
+    SELECT u.RA AS ra_id, COUNT(*) AS settled
+    FROM Room_Reports rp
+    JOIN Tasks t ON t.Task_ID = rp.TaskID
+    JOIN Users u ON u.UserID = t.Assigned_UserID
+    WHERE rp.Status <> 'open' AND u.RA IS NOT NULL
+    GROUP BY u.RA
+) p ON p.ra_id = ra.RA_ID
+SET ra.Settled_Reqs = COALESCE(q.settled, 0),
+    ra.Settled_Reps = COALESCE(p.settled, 0);
 
 -- Users.TasksCompleted / TasksMissed are denormalised counters, and every
 -- completion percentage in the app is derived from them rather than from Tasks.

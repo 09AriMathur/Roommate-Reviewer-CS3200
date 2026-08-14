@@ -448,15 +448,51 @@ else:
     else:
         widths = [1] + [3] * len(roster)
 
-        header = st.columns(widths, vertical_alignment="bottom")
-        header[0].caption("Week of")
-        for col, member in zip(header[1:], roster):
-            mine = member['UserID'] == USER_ID
-            col.markdown(f"**{'You' if mine else member['First_Name']}**")
+        # Every week gets its own outline, so a row reads as one week across all three
+        # columns -- without them the chart was a field of chore names with nothing
+        # holding a row together, and the only way to tell which week a cell belonged
+        # to was to trace back to the date on the left. The current week carries a
+        # heavier one, which is the part st.container cannot express on its own: border
+        # is a boolean, so the weight comes from here.
+        #
+        # st.container(key=...) puts an st-key-<key> class on the block it renders,
+        # which is the same element the border sits on, so these two rules are the
+        # whole of it. The colour is primaryColor from .streamlit/config.toml --
+        # Streamlit compiles the theme into hashed class names rather than CSS
+        # variables, so there is nothing to read it from at runtime. If the theme
+        # changes, change it here too.
+        st.markdown(
+            """
+            <style>
+            .st-key-rotation-week-now {
+                border-width: 2px;
+                border-color: #2C6E63;
+            }
+            .st-key-rotation-header {
+                border-color: transparent;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # The header goes in a bordered container of its own with that border made
+        # invisible: a bordered container pads its contents, so a bare header above
+        # boxed rows left the column titles 17px to the left of the cells they title.
+        with st.container(border=True, key="rotation-header"):
+            header = st.columns(widths, vertical_alignment="bottom")
+            header[0].caption("Week of")
+            for col, member in zip(header[1:], roster):
+                mine = member['UserID'] == USER_ID
+                col.markdown(f"**{'You' if mine else member['First_Name']}**")
 
         for week_start in weeks:
             is_now = week_start == this_week
-            with st.container(border=is_now):
+            with st.container(
+                border=True,
+                key=("rotation-week-now" if is_now
+                     else f"rotation-week-{week_start.isoformat()}"),
+            ):
                 cells = st.columns(widths, vertical_alignment="top")
                 cells[0].markdown(
                     f"**{week_start.strftime('%b %d')}**" if is_now

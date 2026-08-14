@@ -78,14 +78,15 @@ def create_new_user():
             "Last_Name",
             "Email",
             "RA",
-            "RoomID",
+            "DormID",
+            "Room_Number",
         ]
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"Missing required field: {field}"}), 400
             
         query = """
-                    INSERT INTO Users (First_Name, Last_Name, Email, RA, RoomID)
+                    INSERT INTO Users (First_Name, Last_Name, Email, RA, DormID, Room_Number)
                     VALUES (%s, %s, %s, %s, %s)
                 """
         cursor.execute(query, (
@@ -93,7 +94,8 @@ def create_new_user():
             data["Last_Name"],
             data["Email"],
             data["RA"],
-            data["RoomID"],
+            data["DormID"],
+            data["Room_Number"],
         ))
 
         get_db().commit()
@@ -121,7 +123,7 @@ def update_user(user_id):
             return jsonify({"error": "User not found"}), 404
 
         # Build update query dynamically based on provided fields
-        allowed_fields = ["RA", "RoomID", "TasksCompleted", "TasksMissed"]
+        allowed_fields = ["RA", "DormID", "Room_Number", "TasksCompleted", "TasksMissed"]
         update_fields = [f"{f} = %s" for f in allowed_fields if f in data]
         params = [data[f] for f in allowed_fields if f in data]
 
@@ -140,20 +142,44 @@ def update_user(user_id):
         cursor.close()
 
 
-# Get assigned tasks related to a specific user
+# Mirrors the ENUM on Tasks.status
+VALID_TASK_STATUSES = {"todo", "in_progress", "done", "missed"}
+
+
+# Get assigned tasks related to a specific user, optionally narrowed by status
+# Example: /user/users/4/tasks/assigned?status=todo,in_progress
+#
+# The filter exists because "assigned" on its own means every chore this user has ever
+# held, finished ones included. A page offering an extension or a swap needs the chores
+# still in play, and filtering here keeps that decision on the server rather than having
+# each page re-derive it.
 @users.route("/users/<int:user_id>/tasks/assigned", methods=["GET"])
 def get_assigned_tasks(user_id):
     cursor = get_db().cursor(dictionary=True)
     try:
+        statuses = [s.strip() for s in request.args.get("status", "").split(",") if s.strip()]
+        invalid = [s for s in statuses if s not in VALID_TASK_STATUSES]
+        if invalid:
+            return jsonify({
+                "error": f"Invalid status: {', '.join(invalid)}. "
+                         f"Must be one of: {', '.join(sorted(VALID_TASK_STATUSES))}"
+            }), 400
+
         cursor.execute("SELECT UserID FROM Users WHERE UserID = %s", (user_id,))
         user = cursor.fetchone()
 
-        # Reuse the same cursor for the follow-up queries
-        cursor.execute("SELECT * FROM Tasks WHERE Assigned_UserID = %s", (user_id,))
-        user["assigned_tasks"] = cursor.fetchall()
-
         if not user:
             return jsonify({"error": "User not found"}), 404
+
+        # Reuse the same cursor for the follow-up queries
+        query = "SELECT * FROM Tasks WHERE Assigned_UserID = %s"
+        params = [user_id]
+        if statuses:
+            query += f" AND status IN ({', '.join(['%s'] * len(statuses))})"
+            params.extend(statuses)
+
+        cursor.execute(query, params)
+        user["assigned_tasks"] = cursor.fetchall()
 
         return jsonify(user), 200
 
@@ -281,13 +307,22 @@ def get_todo_tasks(user_id):
 def get_roommates(user_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        cursor.execute("SELECT UserID, RoomID FROM Users WHERE UserID = %s", (user_id,))
+        cursor.execute("SELECT UserID, DormID, Room_Number FROM Users WHERE UserID = %s", (user_id,))
         user = cursor.fetchone()
 
         if not user:
             return jsonify({"error": "User not found"}), 404
 
-        cursor.execute("SELECT * FROM Users WHERE RoomID = (SELECT RoomID FROM Users WHERE UserID = %s) AND UserID != %s", (user_id, user_id))
+        cursor.execute(
+            """
+                SELECT * FROM Users
+                WHERE (DormID, Room_Number) = (
+                    SELECT DormID, Room_Number FROM Users WHERE UserID = %s
+                )
+                  AND UserID != %s
+            """,
+            (user_id, user_id),
+        )
         user["roommates"] = cursor.fetchall()
 
         if not user:

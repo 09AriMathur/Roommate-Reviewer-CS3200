@@ -45,7 +45,92 @@ def create_new_room_report():
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"Missing required field: {field}"}), 400
-            
+
+        # A report accuses someone of skipping a chore, so the chore has to exist --
+        # and both rules below depend on who it belongs to and when it was due.
+        cursor.execute(
+            """
+                SELECT t.Task_ID, t.Task_Name, t.Assigned_UserID, t.status, t.due_date,
+                       (t.due_date IS NOT NULL AND t.due_date < CURDATE()) AS past_due,
+                       a.DormID AS assignee_dorm, a.Room_Number AS assignee_room
+                FROM Tasks t
+                LEFT JOIN Users a ON t.Assigned_UserID = a.UserID
+                WHERE t.Task_ID = %s
+            """,
+            (data["TaskID"],),
+        )
+        task = cursor.fetchone()
+
+        if not task:
+            return jsonify({"error": "Task not found"}), 404
+
+        cursor.execute(
+            "SELECT UserID, DormID, Room_Number FROM Users WHERE UserID = %s",
+            (data["UserID"],),
+        )
+        filer = cursor.fetchone()
+        if not filer:
+            return jsonify({"error": "User not found"}), 404
+
+        # Room_Reports.UserID is the person filing; the person being accused is the
+        # task's assignee. Those being equal means someone reported themselves.
+        if (task["Assigned_UserID"] is not None
+                and int(data["UserID"]) == int(task["Assigned_UserID"])):
+            return jsonify({
+                "error": "You cannot file a report about a chore assigned to you."
+            }), 409
+
+        # A report is a roommate saying the shared space went unattended, and the strike
+        # it produces is what escalates to that room's RA. Someone in another suite has
+        # no standing to file it, and an unassigned chore has nobody to name.
+        if task["Assigned_UserID"] is None:
+            return jsonify({
+                "error": f"\"{task['Task_Name']}\" is not assigned to anyone, so there is "
+                         "nobody to report."
+            }), 409
+
+        if ((filer["DormID"], filer["Room_Number"])
+                != (task["assignee_dorm"], task["assignee_room"])):
+            return jsonify({
+                "error": "You can only report a chore belonging to someone in your room."
+            }), 409
+
+        # Nothing was skipped if the chore got done, whenever it was due. Contest a
+        # completion you think is false rather than filing a report over it.
+        if task["status"] == "done":
+            return jsonify({
+                "error": f"\"{task['Task_Name']}\" is already marked done, so it cannot be "
+                         "reported as incomplete."
+            }), 409
+
+        # "This was not done" only means anything once the deadline has passed. A
+        # chore already marked missed is fair game whatever its due date says, and a
+        # chore with no due date has no deadline to have blown.
+        if task["status"] != "missed" and not task["past_due"]:
+            if task["due_date"] is None:
+                detail = (f"\"{task['Task_Name']}\" has no due date, so it cannot be "
+                          "reported as incomplete.")
+            else:
+                detail = (f"\"{task['Task_Name']}\" is not due until "
+                          f"{task['due_date']:%B %d, %Y}, so it cannot be reported as "
+                          "incomplete yet.")
+            return jsonify({"error": detail}), 409
+
+        # One open report per chore per filer. Without this the same person can press
+        # the button three times on one chore and push the assignee to the RA
+        # escalation threshold over a single missed job.
+        cursor.execute(
+            """
+                SELECT ReportID FROM Room_Reports
+                WHERE TaskID = %s AND UserID = %s AND Status = 'open'
+            """,
+            (data["TaskID"], data["UserID"]),
+        )
+        if cursor.fetchone():
+            return jsonify({
+                "error": f"You already have an open report on \"{task['Task_Name']}\"."
+            }), 409
+
         query = """
                     INSERT INTO Room_Reports (TaskID, UserID, Description)
                     VALUES (%s, %s, %s)
@@ -91,6 +176,17 @@ def update_room_report(report_id):
 
         if not update_fields:
             return jsonify({"error": "No valid fields to update"}), 400
+
+        # Time_Reported is when the report was filed, so it cannot double as the review
+        # date -- a report filed in July about a chore due in August, then reviewed in
+        # September, has three different dates and only two columns to hold them.
+        # Reviewed_At is set the moment an RA moves the report off 'open', and cleared
+        # if it is reopened, so it is never a date for a review that has not happened.
+        if "Status" in data:
+            if data["Status"] == "open":
+                update_fields.append("Reviewed_At = NULL")
+            else:
+                update_fields.append("Reviewed_At = COALESCE(Reviewed_At, NOW())")
 
         params.append(report_id)
         query = f"UPDATE Room_Reports SET {', '.join(update_fields)} WHERE ReportID = %s"
@@ -223,7 +319,7 @@ def get_user_standing(user_id):
     cursor = get_db().cursor(dictionary=True)
     try:
         query = """
-                    SELECT UserID, First_Name, Last_Name, RoomID,
+                    SELECT UserID, First_Name, Last_Name, DormID, Room_Number,
                            TasksCompleted, TasksMissed,
                            ROUND(TasksCompleted /
                                  NULLIF(TasksCompleted + TasksMissed, 0) * 100, 1) AS completion_pct
@@ -238,8 +334,10 @@ def get_user_standing(user_id):
 
         # A strike is an open report about a task assigned to this user. Room_Reports.UserID
         # is the filer, so the blamed user is reached through Tasks.Assigned_UserID.
+        # DISTINCT on the task: a strike is a chore you skipped, not a complaint. Two
+        # roommates reporting the same missed chore is one strike, not two.
         query = """
-                    SELECT COUNT(*) AS total
+                    SELECT COUNT(DISTINCT rp.TaskID) AS total
                     FROM Room_Reports rp
                     JOIN Tasks t ON rp.TaskID = t.Task_ID
                     WHERE t.Assigned_UserID = %s
@@ -248,19 +346,19 @@ def get_user_standing(user_id):
         cursor.execute(query, (user_id,))
         open_strikes = cursor.fetchone()["total"]
 
-        # A user with no room has no suite to compare against, and joining on a NULL
-        # RoomID would match nothing, so handle that case rather than returning an
+        # A user with no room has no suite to compare against, and matching on a NULL
+        # room key would match nothing, so handle that case rather than returning an
         # empty comparison that looks like a score of zero.
         suite_avg_pct = None
         roommates = []
-        if me["RoomID"] is not None:
+        if me["DormID"] is not None:
             query = """
                         SELECT ROUND(AVG(TasksCompleted /
                                NULLIF(TasksCompleted + TasksMissed, 0)) * 100, 1) AS suite_avg_pct
                         FROM Users
-                        WHERE RoomID = %s
+                        WHERE DormID = %s AND Room_Number = %s
                     """
-            cursor.execute(query, (me["RoomID"],))
+            cursor.execute(query, (me["DormID"], me["Room_Number"]))
             suite_avg_pct = cursor.fetchone()["suite_avg_pct"]
 
             query = """
@@ -269,10 +367,10 @@ def get_user_standing(user_id):
                                ROUND(TasksCompleted /
                                      NULLIF(TasksCompleted + TasksMissed, 0) * 100, 1) AS completion_pct
                         FROM Users
-                        WHERE RoomID = %s
+                        WHERE DormID = %s AND Room_Number = %s
                         ORDER BY completion_pct DESC, UserID
                     """
-            cursor.execute(query, (me["RoomID"],))
+            cursor.execute(query, (me["DormID"], me["Room_Number"]))
             roommates = cursor.fetchall()
             for mate in roommates:
                 mate["completion_pct"] = _as_number(mate["completion_pct"])
@@ -281,7 +379,8 @@ def get_user_standing(user_id):
             "UserID": me["UserID"],
             "First_Name": me["First_Name"],
             "Last_Name": me["Last_Name"],
-            "RoomID": me["RoomID"],
+            "DormID": me["DormID"],
+            "Room_Number": me["Room_Number"],
             "TasksCompleted": me["TasksCompleted"],
             "TasksMissed": me["TasksMissed"],
             "completion_pct": _as_number(me["completion_pct"]),

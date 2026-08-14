@@ -51,7 +51,7 @@ with joshua_col:
     st.markdown('### Joshua Patel')
     st.badge('Resident', color='gray')
     st.caption(
-        "Plans chores and reports the skipped ones."
+        "Always on top of the tasks. Great roommate"
     )
     if st.button('Log in as Joshua',
                  type='primary',
@@ -69,7 +69,7 @@ with frank_col:
     st.markdown('### Frank Osei')
     st.badge('Resident', color='gray')
     st.caption(
-        "Behind. Asks for extensions, disputes reports."
+        "Always behind on tasks. Bad roommate"
     )
     if st.button('Log in as Frank',
                  type='primary',
@@ -77,7 +77,10 @@ with frank_col:
         st.session_state['authenticated'] = True
         st.session_state['role'] = 'student'
         # Frank Osei (Users.UserID 4) is the seeded stand-in for the Ronny RuleBreaker
-        # persona: 0 tasks completed, 3 missed, two open strikes, and four open requests.
+        # persona, and the deliberate opposite of Joshua: 0 tasks completed, 10 missed,
+        # four open strikes -- one past the limit of three, so his landing page opens on
+        # the red escalation banner rather than the warning -- five live requests, four
+        # already refused, and a trip booked over half of the deadlines he blew.
         st.session_state['user_id'] = 4
         st.session_state['first_name'] = 'Frank'
         logger.info("Logging in as the Ronny RuleBreaker Persona")

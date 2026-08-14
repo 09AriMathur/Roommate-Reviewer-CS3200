@@ -3,6 +3,7 @@ from email.utils import parsedate_to_datetime
 
 import streamlit as st
 from modules.api import api_get
+from modules.labels import chore_state, is_reportable
 from modules.nav import SideBarLinks
 
 st.set_page_config(layout='wide')
@@ -32,13 +33,17 @@ if user is None:
 
 st.session_state['first_name'] = user['First_Name']
 
-room_id = user.get('RoomID')
+# A room is identified by its dorm plus its number, so the resident record carries
+# both halves and there is no separate room id to look up.
+dorm_id = user.get('DormID')
+room_number = user.get('Room_Number')
+has_room = dorm_id is not None and room_number is not None
 
-# Room, dorm and RA are all optional context -- a resident with no room assignment
-# should still get a working page, so these stay quiet on failure.
-room = api_get(f"/room/rooms/{room_id}", quiet=True) if room_id else None
-dorm = api_get(f"/dorm/dorms/{room['DormID']}", quiet=True) if room else None
-ra_response = api_get(f"/room/rooms/{room_id}/ra", quiet=True) if room_id else None
+# Dorm and RA are optional context -- a resident with no room assignment should still
+# get a working page, so these stay quiet on failure.
+dorm = api_get(f"/dorm/dorms/{dorm_id}", quiet=True) if has_room else None
+ra_response = (api_get(f"/room/dorms/{dorm_id}/rooms/{room_number}/ra", quiet=True)
+               if has_room else None)
 ra = (ra_response or {}).get('ra')
 
 standing = api_get(f"/room_report/users/{USER_ID}/standing", quiet=True) or {}
@@ -53,8 +58,8 @@ st.caption(f"Logged in on {login_time.strftime('%A, %B %d, %Y at %I:%M %p')}")
 context = []
 if dorm:
     context.append(dorm['Dorm_Name'])
-if room:
-    context.append(f"Room {room['Room_Number']}")
+if has_room:
+    context.append(f"Room {room_number}")
 if ra:
     context.append(f"RA {ra['First_Name']} {ra['Last_Name']}")
 if context:
@@ -107,9 +112,12 @@ with st.container(border=True):
     cols[3].metric("Away dates", away_label)
 
 if open_strikes >= STRIKE_LIMIT:
+    # Careful with the wording: nothing in the app actually notifies an RA at this
+    # threshold. The only thing that reaches one is the resident opening Ask My RA
+    # themselves, so this says what is true rather than claiming a message was sent.
     st.error(
-        f"You have {open_strikes} open strikes. Your RA has been notified. "
-        "Contesting one is the fastest way back."
+        f"You have {open_strikes} open strikes, which is RA-conversation territory. "
+        "Contest one, or raise it with your RA yourself."
     )
 elif open_strikes == STRIKE_LIMIT - 1:
     st.warning(
@@ -131,13 +139,11 @@ with left:
         st.caption("Nothing on your list right now.")
     for task in dated[:5]:
         due = to_date(task['due_date'])
+        label, color = chore_state(task, today)
         with st.container(border=True):
             name_col, due_col = st.columns([3, 2])
             name_col.write(task['Task_Name'])
-            if due < today:
-                due_col.badge(f"Overdue · {due.strftime('%b %d')}", color="red")
-            else:
-                due_col.badge(due.strftime('%b %d'), color="gray")
+            due_col.badge(f"{label} · {due.strftime('%b %d')}", color=color)
 
 with right:
     st.write("### Waiting on a decision")
@@ -148,6 +154,62 @@ with right:
             type_col, reason_col = st.columns([1, 3])
             type_col.badge(req['Request_Type'].replace('_', ' ').title(), color="blue")
             reason_col.write(req.get('Reason') or "_No reason given_")
+
+# ---- Who else lives here, and what they still owe -------------------------------
+
+# A resident could previously see their own list and nothing else, which makes a shared
+# rotation impossible to judge -- there was no way to tell whether the suite was pulling
+# its weight without opening Chore Reports and reading the reportable list.
+st.write("### Around the suite")
+
+roommates = (api_get(f"/user/users/{USER_ID}/roommates", quiet=True)
+             or {}).get('roommates', [])
+
+if not roommates:
+    st.caption("You have no roommates on file.")
+else:
+    st.caption(
+        "What your suitemates still have unfinished. A chore that is overdue or already "
+        "marked missed is one you can report, on the Chore Reports page."
+    )
+
+# One call, so this panel counts exactly what the report picker would offer -- a chore
+# already reported is not offered twice, and should not be advertised here either.
+my_open_reports = {
+    report['TaskID']
+    for report in (api_get(f"/room_report/users/{USER_ID}/room_reports",
+                           params={"role": "filed", "status": "open"}, quiet=True) or [])
+    if report.get('TaskID') is not None
+}
+
+for mate in roommates:
+    # 'missed' belongs here alongside the chores still in play. Leaving it out said a
+    # roommate was all clear while the Chore Reports page was offering their missed chore
+    # to report. Their finished chores stay out: those are not outstanding.
+    mate_tasks = (api_get(f"/user/users/{mate['UserID']}/tasks/assigned",
+                          params={"status": "todo,in_progress,missed"}, quiet=True)
+                  or {}).get('assigned_tasks', [])
+    reportable = [t for t in mate_tasks
+                  if is_reportable(t, today) and t['Task_ID'] not in my_open_reports]
+    # Only chores with time left on them have a "next due" to show; the rest are the
+    # ones the badge is already reporting on.
+    upcoming = sorted(to_date(t['due_date']) for t in mate_tasks
+                      if t.get('due_date') and not is_reportable(t, today))
+
+    with st.container(border=True):
+        name_col, count_col, due_col = st.columns([3, 2, 2])
+        name_col.write(f"{mate['First_Name']} {mate['Last_Name']}")
+        count_col.write(f"{len(mate_tasks)} unfinished")
+
+        if reportable:
+            due_col.badge(f"{len(reportable)} to report", color="red")
+        elif upcoming:
+            due_col.badge(f"Next {upcoming[0].strftime('%b %d')}", color="gray")
+        elif mate_tasks:
+            due_col.caption("Nothing to report")
+        else:
+            due_col.caption("All clear")
+
 
 # ---- Everywhere else a resident can go -----------------------------------------
 

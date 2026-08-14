@@ -17,22 +17,23 @@ st.caption("Every resident's account, with drill-down into their full profile.")
 # ---- Full roster --------------------------------------------------------
 try:
     users = requests.get(f"{API}/user/users").json()
-    rooms = requests.get(f"{API}/room/rooms").json()
+    dorms = requests.get(f"{API}/dorm/dorms").json()
 except requests.exceptions.RequestException as e:
     st.error(f"Could not load users from the API: {e}")
     st.stop()
 
-# A user record only carries RoomID, so look up each room's DormID
-# (Rooms.RoomID -> Rooms.DormID) to show both on the roster.
-room_to_dorm = {r["RoomID"]: r.get("DormID") for r in rooms}
+# A room is keyed by its dorm and its number, so a user record already carries both
+# halves -- no room lookup needed. Swap the dorm id for its name while we are here,
+# since "South Hall" reads better on a roster than "2".
+dorm_names = {d["DormID"]: d["Dorm_Name"] for d in dorms}
 for u in users:
-    u["DormID"] = room_to_dorm.get(u.get("RoomID"))
+    u["Dorm"] = dorm_names.get(u.get("DormID"))
 
 st.write(f"**{len(users)}** users on record")
 
-# Order the columns so RoomID and DormID sit next to each other
+# Order the columns so the dorm and room number sit next to each other
 column_order = ["UserID", "First_Name", "Last_Name", "Email", "RA",
-                "RoomID", "DormID", "TasksCompleted", "TasksMissed"]
+                "Dorm", "Room_Number", "TasksCompleted", "TasksMissed"]
 df = pd.DataFrame(users)
 df = df[[c for c in column_order if c in df.columns]]
 st.dataframe(df, use_container_width=True, hide_index=True)
@@ -59,7 +60,8 @@ try:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Tasks completed", detail.get("TasksCompleted", 0))
     c2.metric("Tasks missed", detail.get("TasksMissed", 0))
-    c3.metric("Room ID", detail.get("RoomID") if detail.get("RoomID") is not None else "—")
+    c3.metric("Room", f"{detail['Room_Number']}"
+              if detail.get("Room_Number") is not None else "—")
     c4.metric("RA ID", detail.get("RA") if detail.get("RA") is not None else "—")
     st.write(f"**Email:** {detail.get('Email', '—')}")
 

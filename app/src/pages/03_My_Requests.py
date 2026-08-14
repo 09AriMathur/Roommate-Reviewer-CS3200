@@ -1,3 +1,4 @@
+from collections import Counter
 from datetime import date, timedelta
 from email.utils import parsedate_to_datetime
 
@@ -23,6 +24,10 @@ FILEABLE_TYPES = ["extension", "dispute", "expunction", "swap"]
 # Which types point at a specific chore. A dispute challenges a report and an expunction
 # challenges a strike, so neither carries a Task_ID.
 TYPES_NEEDING_TASK = {"extension", "swap"}
+
+# Accepting one of these means taking the chore on, not just approving a request.
+# 'chore_swap' is the older spelling of the same thing and is still in the seed data.
+SWAP_TYPES = {"swap", "chore_swap"}
 
 STATUS_COLORS = {
     "open": "blue",
@@ -51,7 +56,11 @@ my_requests = api_get(f"/request/users/{USER_ID}/requests")
 if my_requests is None:
     st.stop()
 
-assigned = (api_get(f"/user/users/{USER_ID}/tasks/assigned", quiet=True)
+# Only chores still in play. "Assigned" on its own includes everything this resident has
+# ever held, so the picker offered extensions and swaps on chores already marked done --
+# three options against the single chore the My Chores To do tab was showing.
+assigned = (api_get(f"/user/users/{USER_ID}/tasks/assigned",
+                    params={"status": "todo,in_progress"}, quiet=True)
             or {}).get('assigned_tasks', [])
 task_labels = {t['Task_ID']: t['Task_Name'] for t in assigned}
 
@@ -70,7 +79,7 @@ def file_request(default_type="extension", default_reason=""):
     task_id = None
     if request_type in TYPES_NEEDING_TASK:
         if not assigned:
-            st.warning("You have no assigned chores to attach a request to.")
+            st.warning("You have no open chores to attach a request to.")
         else:
             task_id = st.selectbox(
                 "Which chore?",
@@ -78,9 +87,17 @@ def file_request(default_type="extension", default_reason=""):
                 format_func=lambda tid: task_labels.get(tid, f"Task {tid}"),
             )
 
+    # An extension or a swap is a request about a specific chore. Filing one with no
+    # chore attached used to be possible -- only the reason was checked -- and produced a
+    # request nobody could act on, since there was nothing to move or reschedule. With
+    # nothing to attach, the rest of the form has nothing to describe, so it comes out
+    # disabled rather than accepting input that cannot be submitted.
+    blocked = request_type in TYPES_NEEDING_TASK and task_id is None
+
     proposed = None
     if request_type == "extension":
-        proposed = st.date_input("New due date", value=date.today() + timedelta(days=3))
+        proposed = st.date_input("New due date", value=date.today() + timedelta(days=3),
+                                 disabled=blocked)
 
     if request_type == "swap":
         st.caption(
@@ -88,11 +105,18 @@ def file_request(default_type="extension", default_reason=""):
             "records the chore you're giving up, and your roommates agree to the rest."
         )
 
-    reason = st.text_area("Reason", value=default_reason, height=110)
+    reason = st.text_area("Reason", value=default_reason, height=110, disabled=blocked)
 
-    if st.button("Submit request", type="primary", use_container_width=True):
+    if st.button("Submit request", type="primary", use_container_width=True,
+                 disabled=blocked):
         if not reason.strip():
             st.error("Give a reason so your roommates know what they're deciding on.")
+            return
+
+        # The button is disabled in this case, so this is a guard against the chore
+        # disappearing between the dialog opening and the press, not a normal path.
+        if request_type in TYPES_NEEDING_TASK and task_id is None:
+            st.error("Pick the chore this request is about.")
             return
 
         payload = {
@@ -120,28 +144,46 @@ if st.button("File a new request", type="primary"):
     file_request()
 
 
-# ---- Totals across the building ----------------------------------------------
+# ---- My own totals, then the building for context ----------------------------
+
+# /request/requests/stats is an ungrouped count over the whole Requests table. Three
+# of these tiles used to read from it while sitting under a heading that says "My
+# Requests", so a resident with two requests saw "Resolved 190" as if it were theirs.
+# The tiles that describe you are now counted from your own rows.
+mine_by_status = Counter(r['Status'] for r in my_requests)
+
+with st.container(border=True):
+    cols = st.columns(4)
+    cols[0].metric("Requests I've filed", len(my_requests))
+    cols[1].metric("Mine still open", mine_by_status.get('open', 0))
+    cols[2].metric("Mine resolved", mine_by_status.get('resolved', 0))
+    cols[3].metric("Mine rejected", mine_by_status.get('rejected', 0))
 
 stats = api_get("/request/requests/stats", quiet=True)
 if stats:
     by_status = {row['Status']: row['total'] for row in stats.get('by_status', [])}
-    with st.container(border=True):
-        cols = st.columns(4)
-        cols[0].metric("Requests I've filed", len(my_requests))
-        cols[1].metric("Open building-wide", by_status.get('open', 0))
-        cols[2].metric("Resolved", by_status.get('resolved', 0))
-        cols[3].metric("Rejected", by_status.get('rejected', 0))
+    st.caption(
+        f"Across the building: {stats.get('total', 0)} requests, "
+        f"{by_status.get('open', 0)} still open."
+    )
 
 
 # ---- My requests -------------------------------------------------------------
 
-statuses = sorted({r['Status'] for r in my_requests})
-chosen = st.multiselect("Filter by status", statuses, default=statuses,
-                        format_func=pretty)
+# With no requests at all there is nothing to filter, and showing an empty filter
+# followed by "nothing matches" reads as though something was hidden.
+if my_requests:
+    statuses = sorted({r['Status'] for r in my_requests})
+    chosen = st.multiselect("Filter by status", statuses, default=statuses,
+                            format_func=pretty)
+else:
+    chosen = []
 
 visible = [r for r in my_requests if r['Status'] in chosen]
 
-if not visible:
+if not my_requests:
+    st.info("You haven't filed any requests yet.")
+elif not visible:
     st.info("Nothing matches that filter.")
 
 for req in visible:
@@ -222,12 +264,84 @@ else:
 
     if not suite:
         st.caption("Nobody else in your suite has filed a request.")
+    else:
+        st.caption(
+            "Requests your roommates are waiting on. Whoever answers first decides it."
+        )
+
     for req in suite[:10]:
+        request_id = req['Request_ID']
+        asker = roommate_names[req['Requested_By_UserID']]
+        # Only an open request is still up for decision. Anything already resolved or
+        # rejected is history, and the API would take a second answer without
+        # complaint, so the buttons come off once it has been decided.
+        undecided = req['Status'] == 'open'
+        # A swap hands over a specific chore, so taking it on means reassigning that
+        # chore. Without a Task_ID there is nothing to move and it is a plain approval.
+        # Both spellings count: VALID_REQUEST_TYPES carries the legacy 'chore_swap'
+        # alongside 'swap', and seeded rows use both for the same thing.
+        is_swap = (req['Request_Type'] in SWAP_TYPES
+                   and req.get('Task_ID') is not None)
+
         with st.container(border=True):
             who_col, what_col, status_col = st.columns([1, 3, 1])
-            who_col.write(f"**{roommate_names[req['Requested_By_UserID']]}**")
+            who_col.write(f"**{asker}**")
             what_col.write(
                 f"{pretty(req['Request_Type'])} — {req.get('Reason') or 'No reason given'}"
             )
             status_col.badge(pretty(req['Status']),
                              color=STATUS_COLORS.get(req['Status'], "gray"))
+
+            if not undecided:
+                continue
+
+            swap_task = None
+            if is_swap:
+                swap_detail = api_get(f"/request/requests/{request_id}", quiet=True) or {}
+                swap_task = swap_detail.get('task')
+
+                # A chore already marked done or missed has nothing left to hand over,
+                # and reassigning one moves its count onto whoever pressed the button --
+                # taking a finished chore would credit you with completing it.
+                if (swap_task or {}).get('status') not in ('todo', 'in_progress'):
+                    st.caption(
+                        "This chore has already been closed out, so there is nothing "
+                        "left to take on."
+                    )
+                    continue
+
+                st.caption(f"Taking this on moves **{swap_task['Task_Name']}** to you.")
+
+            accept_col, decline_col, _ = st.columns([1, 1, 3])
+            accept_label = "Take this chore" if is_swap else "Approve"
+
+            if accept_col.button(accept_label, key=f"accept_{request_id}",
+                                 type="primary", use_container_width=True):
+                ok = True
+                if is_swap:
+                    # Move the chore first. If that fails the request stays open, which
+                    # is recoverable; resolving first could leave a settled request
+                    # whose chore never actually changed hands.
+                    #
+                    # Status goes back to 'todo' in the same call. A chore taken over is
+                    # a chore you now have to do, so it belongs in your To do tab -- and
+                    # an in_progress chore inherited mid-way would claim you had started
+                    # work you have not.
+                    status, _ = api_write(
+                        "PUT", f"/task/tasks/{req['Task_ID']}",
+                        {"Assigned_UserID": USER_ID, "Status": "todo"},
+                    )
+                    ok = status == 200
+
+                if ok:
+                    status, _ = api_write("PUT", f"/request/requests/{request_id}",
+                                          {"Status": "resolved"})
+                    if status == 200:
+                        st.rerun()
+
+            if decline_col.button("Decline", key=f"decline_{request_id}",
+                                  use_container_width=True):
+                status, _ = api_write("PUT", f"/request/requests/{request_id}",
+                                      {"Status": "rejected"})
+                if status == 200:
+                    st.rerun()

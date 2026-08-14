@@ -44,13 +44,15 @@ def render_interventions(rows):
 ras = api_get("/ra/ras") or []
 users = api_get("/user/users") or []
 rooms = api_get("/room/rooms") or []
-dorms = api_get("/dorm/dorms") or []
 
 if ras:
     ra_names = {ra["RA_ID"]: f"{ra['First_Name']} {ra['Last_Name']}" for ra in ras}
-    room_by_id_of_user = {u["UserID"]: u["RoomID"] for u in users}
-    room_by_room_id = {r["RoomID"]: r for r in rooms}
-    dorm_names = {d["DormID"]: d["Dorm_Name"] for d in dorms}
+    dorm_names = {d["DormID"]: d["Dorm_Name"] for d in (api_get("/dorm/dorms") or [])}
+    # Rooms are keyed by (DormID, Room_Number), so a resident maps onto that pair.
+    room_key_of_user = {
+        u["UserID"]: (u["DormID"], u["Room_Number"]) for u in users
+    }
+    room_by_key = {(r["DormID"], r["Room_Number"]): r for r in rooms}
 
     # RA_Intervention is only exposed per-RA, so gather every intervention by
     # looping over each RA (no "all interventions" route exists)
@@ -61,10 +63,9 @@ if ras:
     active_rows = []
     closed_rows = []
     for i in all_interventions:
-        room_id = room_by_id_of_user.get(i["UserID"])
-        room = room_by_room_id.get(room_id)
+        room = room_by_key.get(room_key_of_user.get(i["UserID"]))
         room_label = (
-            f"Room {room['Room_Number']} ({dorm_names.get(room['DormID'], 'Unknown')})"
+            f"{dorm_names.get(room['DormID'], 'Dorm')} {room['Room_Number']}"
             if room else "Unassigned"
         )
 

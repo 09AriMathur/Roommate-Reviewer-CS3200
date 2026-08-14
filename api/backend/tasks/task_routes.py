@@ -31,6 +31,26 @@ def get_all_tasks():
     finally:
         cursor.close()
 
+# Get a single task by id
+@tasks.route("/tasks/<task_id>", methods=["GET"])
+def get_task(task_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        current_app.logger.info(f'GET /task/tasks/{task_id}')
+
+        cursor.execute("SELECT * FROM Tasks WHERE Task_ID = %s", (task_id,))
+        task = cursor.fetchone()
+
+        if not task:
+            return jsonify({"error": "Task not found"}), 404
+
+        return jsonify(task), 200
+    except Error as e:
+        current_app.logger.error(f'Database error in get_task: {e}')
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
 def _room_roster(cursor, user_id):
     """Everyone sharing a room with this user, including them, in a stable order.
 
